@@ -1,0 +1,3 @@
+[submodule "mongoose_drv/mongoose"]
+	path = mongoose_drv/mongoose
+	url = https://github.com/cesanta/mongoose.git
