@@ -23,6 +23,15 @@ void buzzer_click( void )
   }
 }
 
+void buzzer_error( void )
+{
+  buzzer_timer = xTaskGetTickCount() + MS2ST( 20 );
+  if ( parameters_getValue( PARAM_BUZZER ) )
+  {
+    BUZZER_ON();
+  }
+}
+
 static void buzzer_task( void* arg )
 {
   while ( 1 )

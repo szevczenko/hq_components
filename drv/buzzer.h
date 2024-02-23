@@ -7,5 +7,6 @@
 
 void buzzer_init( void );
 void buzzer_click( void );
+void buzzer_error( void );
 
 #endif
