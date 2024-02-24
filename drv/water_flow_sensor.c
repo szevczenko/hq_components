@@ -163,6 +163,7 @@ error_code_t WaterFlowSensor_ResetValue( water_flow_sensor_t* dev )
 {
   assert( dev );
   dev->value_cl = 0;
+  dev->counter = 0; 
   dev->state = WATER_FLOW_SENSOR_STATE_IDLE;
   assert( xTimerStop( dev->timer, 0 ) == pdPASS );
   return ERROR_CODE_OK;
