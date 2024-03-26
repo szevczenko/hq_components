@@ -24,14 +24,15 @@
 
 /* Private macros ------------------------------------------------------------*/
 
-#define PARTITION_NAME    "dev_config"
-#define STORAGE_NAMESPACE "config"
+#define PARTITION_NAME     "dev_config"
+#define STORAGE_NAMESPACE  "config"
+#define DEV_CONFIG_SN_SIZE 32
 
 /* Private types -------------------------------------------------------------*/
 
 typedef struct
 {
-  uint32_t serial_number;
+  char serial_number[DEV_CONFIG_SN_SIZE];
 } config_data_t;
 
 /* Private variables ---------------------------------------------------------*/
@@ -47,22 +48,56 @@ static SemaphoreHandle_t mutexSemaphore;
 
 static bool _read_data( void )
 {
-  nvs_handle_t my_handle;
+  nvs_handle_t nvs;
   esp_err_t err;
+  size_t len;
 
-  err = nvs_open_from_partition( PARTITION_NAME, STORAGE_NAMESPACE, NVS_READONLY, &my_handle );
+  err = nvs_open_from_partition( PARTITION_NAME, STORAGE_NAMESPACE, NVS_READONLY, &nvs );
   if ( err != ESP_OK )
   {
     printf( "Error read " STORAGE_NAMESPACE " %d\n\r", err );
     return false;
   }
 
-  err = nvs_get_u32( my_handle, "SN", (void*) &config_data.serial_number );
+  memset( config_data.serial_number, 0, sizeof( config_data.serial_number ) );
+  err = nvs_get_str( nvs, "SN", config_data.serial_number, &len );
 
-  nvs_close( my_handle );
+  nvs_close( nvs );
   if ( err != ESP_OK )
   {
     printf( "Error nvs_get_u32 %d\n\r", err );
+    return false;
+  }
+  return true;
+}
+
+static bool _save_data( void )
+{
+  nvs_handle_t nvs;
+  esp_err_t err;
+
+  err = nvs_open_from_partition( PARTITION_NAME, STORAGE_NAMESPACE, NVS_READWRITE, &nvs );
+  if ( err != ESP_OK )
+  {
+    printf( "Error read " STORAGE_NAMESPACE " %d\n\r", err );
+    return false;
+  }
+
+  err = nvs_set_str( nvs, "SN", (const char*) config_data.serial_number );
+
+  if ( err == ESP_OK )
+  {
+    err = nvs_commit( nvs );
+    if ( err == ESP_OK )
+    {
+      printf( "Error commit " STORAGE_NAMESPACE " %d\n\r", err );
+    }
+  }
+
+  nvs_close( nvs );
+  if ( err != ESP_OK )
+  {
+    printf( "Error set serial number %d\n\r", err );
     return false;
   }
   return true;
@@ -94,7 +129,15 @@ void DevConfig_Init( void )
   }
 }
 
-uint32_t DevConfig_GetSerialNumber( void )
+const char* DevConfig_GetSerialNumber( void )
 {
-  return config_data.serial_number;
+  return (const char*) config_data.serial_number;
+}
+
+bool DevConfig_SetSerialNumber( const char* sn )
+{
+  assert( strlen( sn ) < sizeof( config_data.serial_number ) );
+  strcpy( config_data.serial_number, sn );
+  _save_data();
+  return true;
 }

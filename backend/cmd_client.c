@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "keepalive.h"
 #include "parse_cmd.h"
+#include "wifidrv.h"
 
 #define MODULE_NAME "[CMD Cl] "
 #define DEBUG_LVL   PRINT_WARNING
@@ -57,13 +58,13 @@ struct cmd_client_context
   uint32_t cmd_port;
   bool error;
   volatile bool start;
-  volatile bool disconect_req;
+  volatile bool disconnect_req;
   char payload[PAYLOAD_SIZE];
   size_t payload_size;
   uint8_t responce_buff[PAYLOAD_SIZE];
   uint32_t responce_buff_len;
   keepAlive_t keepAlive;
-  SemaphoreHandle_t waitResponceSem;
+  SemaphoreHandle_t waitResponseSem;
   SemaphoreHandle_t mutexSemaphore;
 };
 
@@ -84,16 +85,26 @@ static void _change_state( enum cmd_client_app_state new_state )
   }
 }
 
+static void _on_connect_cb( void )
+{
+  cmdClientStart();
+}
+
+static void _on_disconnect_cb( void )
+{
+  cmdClientStop();
+}
+
 /**
  * @brief   CMD Client application CMD_CLIENT_IDLE state.
  */
 static void _idle_state( void )
 {
-  if ( ctx.disconect_req )
+  if ( ctx.disconnect_req )
   {
     ctx.start = false;
     ctx.error = false;
-    ctx.disconect_req = false;
+    ctx.disconnect_req = false;
   }
 
   if ( ctx.start )
@@ -157,7 +168,7 @@ static void _connect_server_state( void )
 
 static void _connect_ready_state( void )
 {
-  if ( !ctx.start || ctx.disconect_req )
+  if ( !ctx.start || ctx.disconnect_req )
   {
     _change_state( CMD_CLIENT_CLOSE_SOC );
     return;
@@ -172,7 +183,7 @@ static void _close_soc_state( void )
   {
     close( ctx.socket );
     ctx.socket = -1;
-    xQueueReset( (QueueHandle_t) ctx.waitResponceSem );
+    xQueueReset( (QueueHandle_t) ctx.waitResponseSem );
     xQueueReset( (QueueHandle_t) ctx.mutexSemaphore );
   }
   else
@@ -199,6 +210,8 @@ static void _check_errors_state( void )
 
 static void cmd_client_task( void* arg )
 {
+  wifiDrvRegisterConnectCb( _on_connect_cb );
+  wifiDrvRegisterDisconnectCb( _on_disconnect_cb );
   while ( 1 )
   {
     switch ( ctx.state )
@@ -239,7 +252,7 @@ void cmd_client_ctx_init( void )
   _change_state( CMD_CLIENT_IDLE );
   ctx.error = false;
   ctx.start = false;
-  ctx.disconect_req = false;
+  ctx.disconnect_req = false;
   ctx.socket = -1;
   ctx.payload_size = 0;
   strcpy( ctx.cmd_ip_addr, "192.168.4.1" );
@@ -312,7 +325,7 @@ int cmdClientRead( uint8_t* buffer, uint32_t len, uint32_t timeout_ms )
     return TIMEOUT;
   }
 
-  if ( ctx.start && !ctx.disconect_req && FD_ISSET( ctx.socket, &set ) )
+  if ( ctx.start && !ctx.disconnect_req && FD_ISSET( ctx.socket, &set ) )
   {
     ret = read( ctx.socket, (char*) buffer, len );
     if ( ret > 0 )
@@ -358,7 +371,7 @@ static void cmdClientErrorKACb( void )
 void cmdClientStartTask( void )
 {
   keepAliveInit( &ctx.keepAlive, 2800, keepAliveSend, cmdClientErrorKACb );
-  ctx.waitResponceSem = xSemaphoreCreateBinary();
+  ctx.waitResponseSem = xSemaphoreCreateBinary();
   ctx.mutexSemaphore = xSemaphoreCreateBinary();
   cmd_client_ctx_init();
   xSemaphoreGive( ctx.mutexSemaphore );
@@ -370,22 +383,22 @@ void cmdClientStartTask( void )
 void cmdClientStart( void )
 {
   ctx.start = 1;
-  ctx.disconect_req = false;
+  ctx.disconnect_req = false;
 }
 
 void cmdClientDisconnect( void )
 {
-  ctx.disconect_req = true;
+  ctx.disconnect_req = true;
 }
 
 int cmdClientIsConnected( void )
 {
-  return !ctx.disconect_req && ctx.start && ( ctx.state == CMD_CLIENT_STATE_READY );
+  return !ctx.disconnect_req && ctx.start && ( ctx.state == CMD_CLIENT_STATE_READY );
 }
 
 int cmdClientTryConnect( uint32_t timeout )
 {
-  ctx.disconect_req = 0;
+  ctx.disconnect_req = 0;
   uint32_t time_now = ST2MS( xTaskGetTickCount() );
 
   do

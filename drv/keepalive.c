@@ -17,7 +17,7 @@
 static keepAlive_t* keepAliveTab[8];
 static uint8_t tabSize;
 
-static uint8_t keep_alive_frame[PACKET_SIZE] = { PACKET_SIZE, 0xFF, 0xFF, 0xFF, 0xFF, CMD_REQEST, PC_KEEP_ALIVE };
+static uint8_t keep_alive_frame[PACKET_SIZE] = { PACKET_SIZE, 0xFF, 0xFF, 0xFF, 0xFF, CMD_REQUEST, PC_KEEP_ALIVE };
 
 void keepAliveInit( keepAlive_t* keep, uint32_t timeout, int ( *send )( uint8_t* data, uint32_t dataLen ), void ( *errorCb )( void ) )
 {

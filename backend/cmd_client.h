@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "error_code.h"
 #include "parameters.h"
 #include "parse_cmd.h"
 
@@ -40,14 +41,10 @@ int cmdClientRead( uint8_t* buffer, uint32_t len, uint32_t timeout_ms );
 void cmdClientDisconnect( void );
 int cmdClientTryConnect( uint32_t timeout );
 int cmdClientIsConnected( void );
-int cmdClientSendDataWaitResp( uint8_t* buff, uint32_t len, uint8_t* buff_rx, uint32_t* rx_len, uint32_t timeout );
-int cmdClientAnswerData( uint8_t* buff, uint32_t len );
 
-int cmdClientGetAllValue( uint32_t timeout );
-int cmdClientSetAllValue( void );
-int cmdClientSetValue( parameter_value_t val, uint32_t value, uint32_t timeout_ms );
-int cmdClientSetValueWithoutResp( parameter_value_t val, uint32_t value );
-int cmdClientGetValue( parameter_value_t val, uint32_t* value, uint32_t timeout );
-int cmdClientSendCmd( parseCmd_t cmd );
+error_code_t cmdClientSetValue( parameter_value_t val, uint32_t value, uint32_t timeout );
+error_code_t cmdClientSetValueWithoutResp( parameter_value_t val, uint32_t value );
+error_code_t cmdClientGetValue( parameter_value_t val, uint32_t* value, uint32_t timeout );
+error_code_t cmdClientGetString( parameter_string_t val, char* str, uint32_t str_len, uint32_t timeout );
 
 #endif

@@ -3,7 +3,7 @@
 #include "app_config.h"
 #include "parameters.h"
 
-#define CMD_REQEST  0x11
+#define CMD_REQUEST  0x11
 #define CMD_ANSWER  0x22
 #define CMD_DATA    0x33
 #define CMD_COMMAND 0x44
@@ -18,15 +18,16 @@
 #define FRAME_VALUE_TYPE_POS 7
 #define FRAME_VALUE_POS      8
 
-#define PACKET_SIZE 16
+#define PACKET_SIZE 64
+#define PARSE_CMD_MAX_STRING_LEN 48
 
 typedef enum
 {
   PC_KEEP_ALIVE,
-  PC_SET,
-  PC_GET,
-  PC_SET_ALL,
-  PC_GET_ALL,
+  PC_SET_UINT32,
+  PC_GET_UINT32,
+  PC_SET_STRING,
+  PC_GET_STRING,
   PC_LAST,
 } parseType_t;
 

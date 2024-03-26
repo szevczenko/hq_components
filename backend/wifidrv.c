@@ -1,8 +1,6 @@
 #include "wifidrv.h"
 
 #include "app_config.h"
-#include "cmd_client.h"
-#include "cmd_server.h"
 #include "driver/gpio.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -22,7 +20,7 @@
 #include "sleep_e.h"
 
 #define MODULE_NAME "[WiFi] "
-#define DEBUG_LVL   PRINT_INFO
+#define DEBUG_LVL   PRINT_ERROR
 
 #if CONFIG_DEBUG_WIFI
 #define LOG( _lvl, ... ) \
@@ -31,6 +29,7 @@
 #define LOG( PRINT_INFO, ... )
 #endif
 
+#define CALLBACKS_LIST_SIZE            8
 #define DEFAULT_SCAN_LIST_SIZE         32
 #define CONFIG_TCPIP_EVENT_THD_WA_SIZE 4096
 #define MAX_VAL( a, b )                a > b ? a : b
@@ -63,12 +62,18 @@ char* wifi_state_name[] =
 
 typedef struct
 {
+  wifi_drv_callback callbacks[CALLBACKS_LIST_SIZE];
+  size_t size;
+} callback_list_t;
+
+typedef struct
+{
   wifi_app_status_t state;
   int retry;
   bool is_started;
   bool is_power_save;
   bool connected;
-  bool disconect_req;
+  bool disconnect_req;
   bool connect_req;
   bool read_wifi_data;
   uint32_t connect_attemps;
@@ -77,6 +82,9 @@ typedef struct
   wifi_config_t wifi_config;
   wifiConData_t wifi_con_data;
   int rssi;
+
+  callback_list_t on_connect_cb;
+  callback_list_t on_disconnect_cb;
 } wifidrv_ctx_t;
 
 static wifidrv_ctx_t ctx;
@@ -93,91 +101,39 @@ wifi_config_t wifi_config_ap =
 
 //esp_pm_config_esp8266_t pm_config;
 
-static void wifi_read_info_cb( void* arg, wifi_vendor_ie_type_t type, const uint8_t sa[6],
-                               const vendor_ie_data_t* vnd_ie, int rssi );
-
-static void _change_state( wifi_app_status_t new_state )
+static void _init_list( callback_list_t* list )
 {
-  if ( new_state < WIFI_APP_TOP )
-  {
-    ctx.state = new_state;
-    LOG( PRINT_INFO, "State: %s", wifi_state_name[new_state] );
-  }
-  else
-  {
-    LOG( PRINT_ERROR, "Error change state: %d", new_state );
-  }
+  memset( list, 0, sizeof( callback_list_t ) );
 }
 
-static void on_wifi_disconnect( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+static void _add_to_list( callback_list_t* list, wifi_drv_callback cb )
 {
-  wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
-
-  ctx.connected = false;
-  ctx.reason_disconnect = event->reason;
-  // tcpip_adapter_down(TCPIP_ADAPTER_IF_STA);
+  assert( list->size < CALLBACKS_LIST_SIZE );
+  list->callbacks[list->size] = cb;
+  list->size++;
 }
 
-static void scan_done_handler( void )
+static void _run_from_cb_list( callback_list_t* list )
 {
-  LOG( PRINT_INFO, "SCAN DONE!!!!!!" );
-}
-
-static void wifi_scan_done_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
-{
-  switch ( event_id )
+  for ( int i = 0; i < list->size; i++ )
   {
-    case WIFI_EVENT_SCAN_DONE:
-      scan_done_handler();
-      break;
-    default:
-      break;
+    list->callbacks[i]();
   }
 }
 
-static void got_ip_event_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+static void _wifi_read_info_cb( void* arg, wifi_vendor_ie_type_t type, const uint8_t sa[6],
+                                const vendor_ie_data_t* vnd_ie, int rssi )
 {
-  switch ( event_id )
-  {
-    case IP_EVENT_STA_GOT_IP:
-      LOG( PRINT_INFO, "%s Have IP", __func__, event_base, event_id );
-      if ( ( memcmp( ctx.wifi_con_data.ssid, ctx.wifi_config.sta.ssid,
-                     MAX_VAL( strlen( (char*) ctx.wifi_config.sta.ssid ), strlen( (char*) ctx.wifi_con_data.ssid ) ) )
-             != 0 )
-           || ( memcmp( ctx.wifi_con_data.password, ctx.wifi_config.sta.password,
-                        MAX_VAL( strlen( (char*) ctx.wifi_config.sta.password ), strlen( (char*) ctx.wifi_con_data.password ) ) )
-                != 0 ) )
-      {
-        strncpy( (char*) ctx.wifi_con_data.ssid, (char*) ctx.wifi_config.sta.ssid, sizeof( ctx.wifi_con_data.ssid ) );
-        strncpy( (char*) ctx.wifi_con_data.password, (char*) ctx.wifi_config.sta.password,
-                 sizeof( ctx.wifi_con_data.password ) );
-        wifiDataSave( &ctx.wifi_con_data );
-      }
-
-      ctx.connected = true;
-      break;
-  }
 }
 
-static void debug_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+static int _wifi_data_save( wifiConData_t* data )
 {
-  LOG( PRINT_DEBUG, "%s EVENT_WIFI %s %d", __func__, event_base, event_id );
-  if ( event_id == WIFI_EVENT_STA_DISCONNECTED )
-  {
-    __attribute__( ( unused ) ) wifi_event_sta_disconnected_t* data = event_data;
-    LOG( PRINT_DEBUG, "Ssid %s bssid %x.%x.%x.%x.%x.%x len %d reason %d/n/r", data->ssid, data->bssid[0],
-         data->bssid[1], data->bssid[2], data->bssid[3], data->bssid[4], data->bssid[5], data->ssid_len,
-         data->reason );
-  }
-}
-
-int wifiDataSave( wifiConData_t* data )
-{
+  LOG( PRINT_INFO, "%s", __func__ );
   nvs_handle my_handle;
   esp_err_t err;
 
   // Open
-  err = nvs_open( WIFI_AP_NAME, NVS_READWRITE, &my_handle );
+  err = nvs_open( "wifi_config", NVS_READWRITE, &my_handle );
   if ( err != ESP_OK )
   {
     nvs_close( my_handle );
@@ -205,13 +161,13 @@ int wifiDataSave( wifiConData_t* data )
   return ESP_OK;
 }
 
-esp_err_t wifiDataRead( wifiConData_t* data )
+static esp_err_t _wifi_data_read( wifiConData_t* data )
 {
   nvs_handle my_handle;
   esp_err_t err;
 
   // Open
-  err = nvs_open( WIFI_AP_NAME, NVS_READWRITE, &my_handle );
+  err = nvs_open( "wifi_config", NVS_READWRITE, &my_handle );
   if ( err != ESP_OK )
   {
     return err;
@@ -239,7 +195,106 @@ esp_err_t wifiDataRead( wifiConData_t* data )
   return ESP_ERR_NVS_NOT_FOUND;
 }
 
-static void wifi_init( void )
+int _start_sta_mode( void )
+{
+  if ( ctx.is_started )
+  {
+    return false;
+  }
+
+  ESP_ERROR_CHECK( esp_wifi_set_mode( WIFI_MODE_STA ) );
+  ESP_ERROR_CHECK( esp_wifi_start() );
+  ctx.is_started = true;
+  esp_wifi_set_vendor_ie_cb( _wifi_read_info_cb, NULL );
+  wifiDrvPowerSave( false );
+  return true;
+}
+
+int _start_access_pont( void )
+{
+  ESP_ERROR_CHECK( esp_wifi_set_mode( WIFI_MODE_AP ) );
+  ESP_ERROR_CHECK( esp_wifi_set_config( ESP_IF_WIFI_AP, &wifi_config_ap ) );
+  ESP_ERROR_CHECK( esp_wifi_start() );
+  ctx.is_started = true;
+  return true;
+}
+
+static void _change_state( wifi_app_status_t new_state )
+{
+  if ( new_state < WIFI_APP_TOP )
+  {
+    ctx.state = new_state;
+    LOG( PRINT_DEBUG, "State: %s", wifi_state_name[new_state] );
+  }
+  else
+  {
+    LOG( PRINT_ERROR, "Error change state: %d", new_state );
+  }
+}
+
+static void _on_wifi_disconnect( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+{
+  wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
+
+  ctx.connected = false;
+  ctx.reason_disconnect = event->reason;
+  // tcpip_adapter_down(TCPIP_ADAPTER_IF_STA);
+}
+
+static void _scan_done_handler( void )
+{
+  LOG( PRINT_INFO, "SCAN DONE!!!!!!" );
+}
+
+static void _wifi_scan_done_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+{
+  switch ( event_id )
+  {
+    case WIFI_EVENT_SCAN_DONE:
+      _scan_done_handler();
+      break;
+    default:
+      break;
+  }
+}
+
+static void _got_ip_event_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+{
+  switch ( event_id )
+  {
+    case IP_EVENT_STA_GOT_IP:
+      LOG( PRINT_INFO, "%s Have IP", __func__, event_base, event_id );
+      if ( ( memcmp( ctx.wifi_con_data.ssid, ctx.wifi_config.sta.ssid,
+                     MAX_VAL( strlen( (char*) ctx.wifi_config.sta.ssid ), strlen( (char*) ctx.wifi_con_data.ssid ) ) )
+             != 0 )
+           || ( memcmp( ctx.wifi_con_data.password, ctx.wifi_config.sta.password,
+                        MAX_VAL( strlen( (char*) ctx.wifi_config.sta.password ), strlen( (char*) ctx.wifi_con_data.password ) ) )
+                != 0 ) )
+      {
+        strncpy( (char*) ctx.wifi_con_data.ssid, (char*) ctx.wifi_config.sta.ssid, sizeof( ctx.wifi_con_data.ssid ) );
+        strncpy( (char*) ctx.wifi_con_data.password, (char*) ctx.wifi_config.sta.password,
+                 sizeof( ctx.wifi_con_data.password ) );
+        _wifi_data_save( &ctx.wifi_con_data );
+      }
+
+      ctx.connected = true;
+      break;
+  }
+}
+
+static void _debug_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+{
+  LOG( PRINT_DEBUG, "%s EVENT_WIFI %s %d", __func__, event_base, event_id );
+  if ( event_id == WIFI_EVENT_STA_DISCONNECTED )
+  {
+    __attribute__( ( unused ) ) wifi_event_sta_disconnected_t* data = event_data;
+    LOG( PRINT_DEBUG, "Ssid %s bssid %x.%x.%x.%x.%x.%x len %d reason %d/n/r", data->ssid, data->bssid[0],
+         data->bssid[1], data->bssid[2], data->bssid[3], data->bssid[4], data->bssid[5], data->ssid_len,
+         data->reason );
+  }
+}
+
+static void _state_init( void )
 {
   /* Nadawanie nazwy WiFi Access point oraz przypisanie do niego mac adresu */
   if ( wifi_type == T_WIFI_TYPE_SERVER )
@@ -276,11 +331,11 @@ static void wifi_init( void )
 
   if ( wifi_type == T_WIFI_TYPE_SERVER )
   {
-    wifiStartAccessPoint();
+    _start_access_pont();
   }
   else
   {
-    if ( wifiDataRead( &ctx.wifi_con_data ) == ESP_OK )
+    if ( _wifi_data_read( &ctx.wifi_con_data ) == ESP_OK )
     {
       strncpy( (char*) ctx.wifi_config.sta.ssid, (char*) ctx.wifi_con_data.ssid, sizeof( ctx.wifi_config.sta.ssid ) );
       strncpy( (char*) ctx.wifi_config.sta.password, (char*) ctx.wifi_con_data.password,
@@ -292,20 +347,20 @@ static void wifi_init( void )
       esp_wifi_set_config( WIFI_IF_STA, &ctx.wifi_config );
     }
 
-    wifiStartDevice();
+    _start_sta_mode();
   }
 
-  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &on_wifi_disconnect, NULL ) );
-  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &wifi_scan_done_handler, NULL ) );
-  ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, IP_EVENT_STA_GOT_IP, &got_ip_event_handler, NULL ) );
-  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_MASK_ALL, &debug_handler, NULL ) );
-  ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, WIFI_EVENT_MASK_ALL, &debug_handler, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_on_wifi_disconnect, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &_wifi_scan_done_handler, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, IP_EVENT_STA_GOT_IP, &_got_ip_event_handler, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_MASK_ALL, &_debug_handler, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, WIFI_EVENT_MASK_ALL, &_debug_handler, NULL ) );
 
   _change_state( WIFI_APP_IDLE );
   LOG( PRINT_INFO, "Wifi init ok" );
 }
 
-static void wifi_idle( void )
+static void _state_idle( void )
 {
   if ( wifi_type == T_WIFI_TYPE_SERVER )
   {
@@ -322,14 +377,14 @@ static void wifi_idle( void )
   }
 }
 
-static void wifi_connect( void )
+static void _state_connect( void )
 {
   int ret = 0;
 
   if ( !ctx.is_started )
   {
     LOG( PRINT_INFO, "WiFiDrv: WiFi start Device" );
-    wifiStartDevice();
+    _start_sta_mode();
   }
 
   esp_wifi_set_config( ESP_IF_WIFI_STA, &ctx.wifi_config );
@@ -354,11 +409,11 @@ static void wifi_connect( void )
   }
 }
 
-static void wifi_wait_connect( void )
+static void _state_wait_connecting( void )
 {
   if ( ctx.connected )
   {
-    ctx.disconect_req = false;
+    ctx.disconnect_req = false;
     ctx.connect_req = false;
     ctx.connect_attemps = 0;
     _change_state( WIFI_APP_START );
@@ -381,35 +436,28 @@ static void wifi_wait_connect( void )
   }
 }
 
-static void wifi_app_start( void )
+static void _state_start( void )
 {
   osDelay( 100 );
-  if ( wifi_type == T_WIFI_TYPE_SERVER )
-  {
-    cmdServerStart();
-  }
-  else
-  {
-    cmdClientStart();
-  }
-
+  _run_from_cb_list( &ctx.on_connect_cb );
   _change_state( WIFI_APP_READY );
 }
 
-static void wifi_app_stop( void )
+static void _state_stop( void )
 {
-  if ( wifi_type == T_WIFI_TYPE_SERVER )
-  {
-    cmdServerStop();
-  }
-  else
-  {
-    cmdClientStop();
-  }
+  _run_from_cb_list( &ctx.on_disconnect_cb );
+  // if ( wifi_type == T_WIFI_TYPE_SERVER )
+  // {
+  //   cmdServerStop();
+  // }
+  // else
+  // {
+  //   cmdClientStop();
+  // }
 
-  if ( ctx.disconect_req )
+  if ( ctx.disconnect_req )
   {
-    ctx.disconect_req = false;
+    ctx.disconnect_req = false;
     if ( ctx.reason_disconnect != 0 )
     {
       LOG( PRINT_INFO, "WiFi reason %d", ctx.reason_disconnect );
@@ -422,11 +470,11 @@ static void wifi_app_stop( void )
   _change_state( WIFI_APP_IDLE );
 }
 
-static void wifi_app_ready( void )
+static void _state_ready( void )
 {
-  if ( ctx.disconect_req || !ctx.connected || ctx.connect_req )
+  if ( ctx.disconnect_req || !ctx.connected || ctx.connect_req )
   {
-    LOG( PRINT_INFO, "WiFi STOP reason disconnect_req %d connect %d conect_req %d", ctx.disconect_req,
+    LOG( PRINT_INFO, "WiFi STOP reason disconnect_req %d connect %d conect_req %d", ctx.disconnect_req,
          !ctx.connected, ctx.connect_req );
     _change_state( WIFI_APP_STOP );
   }
@@ -438,25 +486,7 @@ static void wifi_app_ready( void )
   vTaskDelay( MS2ST( 200 ) );
 }
 
-int wifiDrvStartScan( void )
-{
-  wifi_scan_config_t scan_config = { 0 };
-
-  if ( ( ctx.state == WIFI_APP_IDLE ) || ( ctx.state == WIFI_APP_READY ) )
-  {
-    if ( !ctx.is_started )
-    {
-      wifiStartDevice();
-      osDelay( 100 );
-    }
-
-    return esp_wifi_scan_start( &scan_config, true );
-  }
-
-  return -1;
-}
-
-static void print_auth_mode( int authmode )
+static void _print_auth_mode( int authmode )
 {
   switch ( authmode )
   {
@@ -490,7 +520,7 @@ static void print_auth_mode( int authmode )
   }
 }
 
-static void print_cipher_type( int pairwise_cipher, int group_cipher )
+static void _print_cipher_type( int pairwise_cipher, int group_cipher )
 {
   switch ( pairwise_cipher )
   {
@@ -543,6 +573,68 @@ static void print_cipher_type( int pairwise_cipher, int group_cipher )
   }
 }
 
+static void _wifi_event_task( void* pv )
+{
+  while ( 1 )
+  {
+    switch ( ctx.state )
+    {
+      case WIFI_APP_INIT:
+        _state_init();
+        break;
+
+      case WIFI_APP_IDLE:
+        _state_idle();
+        break;
+
+      case WIFI_APP_CONNECT:
+        _state_connect();
+        break;
+
+      case WIFI_APP_WAIT_CONNECT:
+        _state_wait_connecting();
+        break;
+
+      case WIFI_APP_START:
+        _state_start();
+        break;
+
+      case WIFI_APP_STOP:
+        _state_stop();
+        break;
+
+      case WIFI_APP_READY:
+        _state_ready();
+        break;
+
+      case WIFI_APP_DEINIT:
+        _state_stop();
+        break;
+
+      default:
+        _change_state( WIFI_APP_IDLE );
+    }
+  }
+}
+
+bool wifiDrvStartScan( void )
+{
+  wifi_scan_config_t scan_config = { 0 };
+
+  if ( ( ctx.state == WIFI_APP_IDLE ) || ( ctx.state == WIFI_APP_READY ) )
+  {
+    if ( !ctx.is_started )
+    {
+      _start_sta_mode();
+      osDelay( 100 );
+    }
+
+    return esp_wifi_scan_start( &scan_config, true ) == ESP_OK;
+  }
+
+  return false;
+}
+
 void wifiDrvGetScanResult( uint16_t* ap_count )
 {
   uint16_t number = DEFAULT_SCAN_LIST_SIZE;
@@ -553,104 +645,80 @@ void wifiDrvGetScanResult( uint16_t* ap_count )
   {
     LOG( PRINT_DEBUG, "AP: %s CH %d CH2 %d RSSI %d", ctx.scan_list[i].ssid, ctx.scan_list[i].primary,
          ctx.scan_list[i].second, ctx.scan_list[i].rssi );
-    print_auth_mode( ctx.scan_list[i].authmode );
+    _print_auth_mode( ctx.scan_list[i].authmode );
     if ( ctx.scan_list[i].authmode != WIFI_AUTH_WEP )
     {
-      print_cipher_type( ctx.scan_list[i].pairwise_cipher, ctx.scan_list[i].group_cipher );
+      _print_cipher_type( ctx.scan_list[i].pairwise_cipher, ctx.scan_list[i].group_cipher );
     }
   }
 }
 
-int wifiDrvGetNameFromScannedList( uint8_t number, char* name )
+bool wifiDrvGetNameFromScannedList( uint8_t number, char* name )
 {
   strcpy( name, (char*) ctx.scan_list[number].ssid );
   return true;
 }
 
-int wifiDrvSetFromAPList( uint8_t num )
+bool wifiDrvSetFromAPList( uint8_t num )
 {
   if ( num > DEFAULT_SCAN_LIST_SIZE )
   {
-    return 0;
+    return false;
   }
 
   strncpy( (char*) ctx.wifi_config.sta.ssid, (char*) ctx.scan_list[num].ssid, sizeof( ctx.wifi_config.sta.ssid ) );
-  return 1;
+  return true;
 }
 
-int wifiDrvSetAPName( char* name, size_t len )
+bool wifiDrvSetAPName( char* name, size_t len )
 {
   memset( ctx.wifi_config.sta.ssid, 0, sizeof( ctx.wifi_config.sta.ssid ) );
   if ( len > sizeof( ctx.wifi_config.sta.ssid ) )
   {
     LOG( PRINT_ERROR, "%s name is to long", __func__ );
-    return 0;
+    return false;
   }
 
   memcpy( ctx.wifi_config.sta.ssid, name, len );
   LOG( PRINT_INFO, "Set AP Name %s", ctx.wifi_config.sta.ssid );
-  return 1;
+  return true;
 }
 
-int wifiDrvGetAPName( char* name )
+bool wifiDrvGetAPName( char* name )
 {
   strcpy( name, (char*) ctx.wifi_config.sta.ssid );
   return true;
 }
 
-int wifiDrvSetPassword( char* passwd, size_t len )
+bool wifiDrvSetPassword( char* passwd, size_t len )
 {
   strncpy( (char*) ctx.wifi_config.sta.password, passwd, sizeof( ctx.wifi_config.sta.password ) );
-  return 1;
+  return true;
 }
 
-int wifiDrvConnect( void )
+bool wifiDrvConnect( void )
 {
   if ( wifi_type == T_WIFI_TYPE_SERVER )
-  {
-    return -1;
-  }
-
-  ctx.connect_req = true;
-  return 1;
-}
-
-int wifiDrvDisconnect( void )
-{
-  if ( wifi_type == T_WIFI_TYPE_SERVER )
-  {
-    return -1;
-  }
-
-  ctx.disconect_req = true;
-  return 1;
-}
-
-int wifiStartDevice( void )
-{
-  if ( ctx.is_started )
   {
     return false;
   }
 
-  ESP_ERROR_CHECK( esp_wifi_set_mode( WIFI_MODE_STA ) );
-  ESP_ERROR_CHECK( esp_wifi_start() );
-  ctx.is_started = true;
-  esp_wifi_set_vendor_ie_cb( wifi_read_info_cb, NULL );
-  wifiDrvPowerSave( false );
-  return 1;
+  ctx.connect_req = true;
+  return true;
 }
 
-int wifiStartAccessPoint( void )
+bool wifiDrvDisconnect( void )
 {
-  ESP_ERROR_CHECK( esp_wifi_set_mode( WIFI_MODE_AP ) );
-  ESP_ERROR_CHECK( esp_wifi_set_config( ESP_IF_WIFI_AP, &wifi_config_ap ) );
-  ESP_ERROR_CHECK( esp_wifi_start() );
-  ctx.is_started = true;
-  return 1;
+  if ( wifi_type == T_WIFI_TYPE_SERVER )
+  {
+    return false;
+  }
+
+  ctx.disconnect_req = true;
+  return true;
 }
 
-int wifiDrvIsConnected( void )
+bool wifiDrvIsConnected( void )
 {
   return ctx.connected;
 }
@@ -670,64 +738,7 @@ bool wifiDrvTryingConnect( void )
   return ctx.state == WIFI_APP_WAIT_CONNECT || ctx.state == WIFI_APP_CONNECT;
 }
 
-static void wifi_event_task( void* pv )
-{
-  while ( 1 )
-  {
-    // if (ctx.retry > 10) {
-    //   stastus_reg_eth = 0;
-    //   esp_wifi_stop();
-    //   osDelay(1000);
-    //   wifiDrvConnect();
-    //   ctx.retry = 0;
-    // }
-
-    switch ( ctx.state )
-    {
-      case WIFI_APP_INIT:
-        wifi_init();
-        break;
-
-      case WIFI_APP_IDLE:
-        wifi_idle();
-        break;
-
-      case WIFI_APP_CONNECT:
-        wifi_connect();
-        break;
-
-      case WIFI_APP_WAIT_CONNECT:
-        wifi_wait_connect();
-        break;
-
-      case WIFI_APP_START:
-        wifi_app_start();
-        break;
-
-      case WIFI_APP_STOP:
-        wifi_app_stop();
-        break;
-
-      case WIFI_APP_READY:
-        wifi_app_ready();
-        break;
-
-      case WIFI_APP_DEINIT:
-        wifi_app_stop();
-        break;
-
-      default:
-        _change_state( WIFI_APP_IDLE );
-    }
-  }
-}
-
-static void wifi_read_info_cb( void* arg, wifi_vendor_ie_type_t type, const uint8_t sa[6],
-                               const vendor_ie_data_t* vnd_ie, int rssi )
-{
-}
-
-bool wifiDrvIsReadedData( void )
+bool wifiDrvIsReadData( void )
 {
   return ctx.read_wifi_data;
 }
@@ -749,19 +760,24 @@ void wifiDrvPowerSave( bool state )
 
 void wifiDrvInit( void )
 {
-  if ( wifi_type == T_WIFI_TYPE_SERVER )
-  {
-    cmdServerStartTask();
-  }
-  else
-  {
-    cmdClientStartTask();
-  }
-
-  xTaskCreate( wifi_event_task, "wifi_event_task", CONFIG_TCPIP_EVENT_THD_WA_SIZE, NULL, NORMALPRIO, NULL );
+  esp_log_level_set( "wifi", ESP_LOG_WARN );
+  esp_log_level_set( "esp_netif_handlers", ESP_LOG_WARN );
+  _init_list( &ctx.on_connect_cb );
+  _init_list( &ctx.on_disconnect_cb );
+  xTaskCreate( _wifi_event_task, "_wifi_event_task", CONFIG_TCPIP_EVENT_THD_WA_SIZE, NULL, NORMALPRIO, NULL );
 }
 
 void wifiDrvSetWifiType( wifi_type_t type )
 {
   wifi_type = type;
+}
+
+void wifiDrvRegisterConnectCb( wifi_drv_callback cb )
+{
+  _add_to_list( &ctx.on_connect_cb, cb );
+}
+
+void wifiDrvRegisterDisconnectCb( wifi_drv_callback cb )
+{
+  _add_to_list( &ctx.on_disconnect_cb, cb );
 }
