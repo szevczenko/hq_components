@@ -11,6 +11,7 @@
 #ifndef _DEV_CONFIG_H
 #define _DEV_CONFIG_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -34,11 +35,16 @@ void DevConfig_Init( void );
 /**
  * @brief   Get serial number.
  */
-uint32_t DevConfig_GetSerialNumber( void );
+const char* DevConfig_GetSerialNumber( void );
 
 /**
  * @brief   Print data.
  */
 void DevConfig_Printf( enum config_print_lvl module_lvl, enum config_print_lvl msg_lvl, const char* format, ... );
+
+/**
+ * @brief   Only for production app using
+ */
+bool DevConfig_SetSerialNumber( const char* sn );
 
 #endif

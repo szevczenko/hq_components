@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "parameters.h"
 #include "parse_cmd.h"
+#include "wifidrv.h"
 
 #define MODULE_NAME "[CMD Srv] "
 #define DEBUG_LVL   PRINT_WARNING
@@ -66,7 +67,7 @@ typedef struct
   uint8_t responce_buff[PAYLOAD_SIZE];
   uint32_t responce_buff_len;
   keepAlive_t keepAlive;
-  SemaphoreHandle_t waitResponceSem;
+  SemaphoreHandle_t waitResponseSem;
   SemaphoreHandle_t mutexSemaphore;
   TaskHandle_t thread_task_handle;
 
@@ -76,6 +77,16 @@ typedef struct
 static cmd_server_t ctx;
 
 extern portMUX_TYPE portMux;
+
+static void _on_connect_cb( void )
+{
+  cmdServerStart();
+}
+
+static void _on_disconnect_cb( void )
+{
+  cmdServerStop();
+}
 
 static void _change_state( enum state_t new_state )
 {
@@ -317,6 +328,8 @@ static void _check_errors_state( void )
 
 void cmd_server_task( void* arg )
 {
+  wifiDrvRegisterConnectCb( _on_connect_cb );
+  wifiDrvRegisterDisconnectCb( _on_disconnect_cb );
   while ( 1 )
   {
     switch ( ctx.state )
@@ -387,14 +400,14 @@ int cmdServerSendData( uint8_t* buff, uint8_t len )
 
 int cmdServerSendDataWaitResp( uint8_t* buff, uint32_t len, uint8_t* buff_rx, uint32_t* rx_len, uint32_t timeout )
 {
-  if ( buff[1] != CMD_REQEST )
+  if ( buff[1] != CMD_REQUEST )
   {
     return false;
   }
 
   if ( xSemaphoreTake( ctx.mutexSemaphore, timeout ) == pdTRUE )
   {
-    xQueueReset( (QueueHandle_t) ctx.waitResponceSem );
+    xQueueReset( (QueueHandle_t) ctx.waitResponseSem );
 
     if ( cmdServerSendData( buff, len ) < 0 )
     {
@@ -403,7 +416,7 @@ int cmdServerSendDataWaitResp( uint8_t* buff, uint32_t len, uint8_t* buff_rx, ui
       return false;
     }
 
-    if ( xSemaphoreTake( ctx.waitResponceSem, timeout ) == pdTRUE )
+    if ( xSemaphoreTake( ctx.waitResponseSem, timeout ) == pdTRUE )
     {
       if ( buff[2] != ctx.responce_buff[2] )
       {
@@ -452,7 +465,7 @@ int cmdServerAnswerData( uint8_t* buff, uint32_t len )
   }
 
   memcpy( ctx.responce_buff, buff, ctx.responce_buff_len );
-  xSemaphoreGive( ctx.waitResponceSem );
+  xSemaphoreGive( ctx.waitResponseSem );
   return true;
 }
 
@@ -467,7 +480,7 @@ int cmdServerSetValueWithoutResp( parameter_value_t val, uint32_t value )
 
   sendBuff[0] = 8;
   sendBuff[1] = CMD_DATA;
-  sendBuff[2] = PC_SET;
+  sendBuff[2] = PC_SET_UINT32;
   sendBuff[3] = val;
   memcpy( &sendBuff[4], (uint8_t*) &value, 4 );
 
@@ -486,7 +499,7 @@ int cmdServerSetValueWithoutRespI( parameter_value_t val, uint32_t value )
 
   sendBuff[0] = 8;
   sendBuff[1] = CMD_DATA;
-  sendBuff[2] = PC_SET;
+  sendBuff[2] = PC_SET_UINT32;
   sendBuff[3] = val;
   memcpy( &sendBuff[4], (uint8_t*) &value, 4 );
 
@@ -508,14 +521,14 @@ int cmdServerGetValue( parameter_value_t val, uint32_t* value, uint32_t timeout 
   {
     static uint8_t sendBuff[4];
     sendBuff[0] = 4;
-    sendBuff[1] = CMD_REQEST;
-    sendBuff[2] = PC_GET;
+    sendBuff[1] = CMD_REQUEST;
+    sendBuff[2] = PC_GET_UINT32;
     sendBuff[3] = val;
-    xQueueReset( (QueueHandle_t) ctx.waitResponceSem );
+    xQueueReset( (QueueHandle_t) ctx.waitResponseSem );
     cmdServerSendData( sendBuff, sizeof( sendBuff ) );
-    if ( xSemaphoreTake( ctx.waitResponceSem, timeout ) == pdTRUE )
+    if ( xSemaphoreTake( ctx.waitResponseSem, timeout ) == pdTRUE )
     {
-      if ( PC_GET != ctx.responce_buff[2] )
+      if ( PC_GET_UINT32 != ctx.responce_buff[2] )
       {
         xSemaphoreGive( ctx.mutexSemaphore );
         return 0;
@@ -545,51 +558,6 @@ int cmdServerGetValue( parameter_value_t val, uint32_t* value, uint32_t timeout 
     {
       xSemaphoreGive( ctx.mutexSemaphore );
       LOG( PRINT_INFO, "Timeout cmdClientGetValue" );
-    }
-  }
-
-  return false;
-}
-
-int cmdServerGetAllValue( uint32_t timeout )
-{
-  if ( xSemaphoreTake( ctx.mutexSemaphore, timeout ) == pdTRUE )
-  {
-    static uint8_t sendBuff[3];
-
-    sendBuff[0] = 3;
-    sendBuff[1] = CMD_REQEST;
-    sendBuff[2] = PC_GET_ALL;
-
-    xQueueReset( (QueueHandle_t) ctx.waitResponceSem );
-    cmdServerSendData( sendBuff, sizeof( sendBuff ) );
-    if ( xSemaphoreTake( ctx.waitResponceSem, timeout ) == pdTRUE )
-    {
-      if ( PC_GET_ALL != ctx.responce_buff[2] )
-      {
-        xSemaphoreGive( ctx.mutexSemaphore );
-        return 0;
-      }
-
-      uint32_t return_data;
-      for ( int i = 0; i < ( ctx.responce_buff_len - 3 ) / 4; i++ )
-      {
-        return_data = (uint32_t) ctx.responce_buff[3 + i * 4];
-        //LOG(PRINT_INFO, "VALUE: %d, %d", i, return_data);
-        if ( parameters_setValue( i, return_data ) == false )
-        {
-          LOG( PRINT_INFO, "Error Set Value %d = %d", i, return_data );
-        }
-      }
-
-      ctx.responce_buff_len = 0;
-      xSemaphoreGive( ctx.mutexSemaphore );
-      return 1;
-    }
-    else
-    {
-      xSemaphoreGive( ctx.mutexSemaphore );
-      LOG( PRINT_INFO, "Timeout cmdServerGetAllValue" );
     }
   }
 
@@ -626,7 +594,7 @@ void cmdServerStartTask( void )
     keepAliveInit( &ctx.keepAlive, 3000, keepAliveSend, cmdServerErrorKACb );
   }
 
-  ctx.waitResponceSem = xSemaphoreCreateBinary();
+  ctx.waitResponseSem = xSemaphoreCreateBinary();
   ctx.mutexSemaphore = xSemaphoreCreateBinary();
   xSemaphoreGive( ctx.mutexSemaphore );
   cmd_server_ctx_init();
