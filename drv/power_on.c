@@ -3,13 +3,14 @@
 #include <stdio.h>
 
 #include "app_config.h"
+#include "cmd_client.h"
 #include "driver/gpio.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "menu_backend.h"
 #include "menu_drv.h"
 #include "parameters.h"
+#include "wifidrv.h"
 
 #define MODULE_NAME "[Power] "
 #define DEBUG_LVL   PRINT_WARNING
@@ -64,7 +65,7 @@ static void _change_state( enum state_t new_state )
 
 static void _state_idle( void )
 {
-  if ( false == backendIsConnected() )
+  if ( ( false == wifiDrvIsConnected() ) && ( false == cmdClientIsConnected() ) )
   {
     ctx.power_off_timer = xTaskGetTickCount() + MS2ST( POWER_OFF_TIME_MIN * 60 * 1000 );
     _change_state( STATE_WAIT_TO_DISABLE );
@@ -74,7 +75,7 @@ static void _state_idle( void )
 
 static void _state_wait_to_disable( void )
 {
-  if ( backendIsConnected() )
+  if ( wifiDrvIsConnected() && cmdClientIsConnected() )
   {
     _change_state( STATE_IDLE );
     return;

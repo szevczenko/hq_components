@@ -12,7 +12,6 @@
 #include "freertos/semphr.h"
 #include "keepalive.h"
 #include "oled.h"
-#include "ssdFigure.h"
 #include "wifidrv.h"
 
 #define MODULE_NAME "[SLEEP] "

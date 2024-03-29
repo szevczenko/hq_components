@@ -1,7 +1,6 @@
 #ifndef _PARSE_CMD_H
 #define _PARSE_CMD_H
 #include "app_config.h"
-#include "parameters.h"
 
 #define CMD_REQUEST  0x11
 #define CMD_ANSWER  0x22

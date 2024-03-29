@@ -8,13 +8,10 @@
 #include "but.h"
 #include "esp_task_wdt.h"
 #include "freertos/semphr.h"
-
-#include "menu_backend.h"
 #include "oled.h"
 #include "parameters.h"
 #include "power_on.h"
 #include "ssd1306.h"
-#include "ssdFigure.h"
 #include "wifidrv.h"
 
 #define MODULE_NAME "[MENU Drv] "
@@ -68,6 +65,10 @@ typedef struct
   SemaphoreHandle_t update_screen_req;
   TickType_t power_off_timer;
   TickType_t block_power_off_timer;
+  void ( *toggleEmergencyDisable )( void );
+  menuDrvDrawBatteryCb_t drawBattery;
+  menuDrvDrawSignalCb_t drawSignal;
+  menuDrvGetMsgCb_t getMsg;
 } menu_drv_t;
 
 static menu_drv_t ctx;
@@ -103,6 +104,20 @@ void menuDrvSaveParameters( void )
   ctx.save_flag = 1;
 }
 
+static const char* _get_msg( menuDrvMsg_t msg )
+{
+  const char* result = NULL;
+  if ( ctx.getMsg != NULL )
+  {
+    result = ctx.getMsg( msg );
+  }
+  if ( result == NULL )
+  {
+    return "Not implemented";
+  }
+  return result;
+}
+
 static void save_process( void )
 {
   if ( ( ctx.save_flag == 1 ) && ( ctx.save_timeout < xTaskGetTickCount() ) )
@@ -116,7 +131,7 @@ int menuDrvElementsCnt( menu_token_t* menu )
 {
   if ( menu->menu_list == NULL )
   {
-    LOG( PRINT_INFO, "menu->menu_list == NULL (%s)\n", dictionary_get_string( menu->name_dict ) );
+    LOG( PRINT_INFO, "menu->menu_list == NULL (%ld)\n", menu->name_dict );
     return 0;
   }
 
@@ -200,7 +215,10 @@ static void menu_fall_turn_on_off_but_cb( void* arg )
   }
 
   power_on_reset_timer();
-  backendToggleEmergencyDisable();
+  if ( ctx.toggleEmergencyDisable != NULL )
+  {
+    ctx.toggleEmergencyDisable();
+  }
 }
 
 static void menu_timer_power_off_but_cb( void* arg )
@@ -426,7 +444,7 @@ void menu_deactivate_but( void )
 
 static void menu_state_init( void )
 {
-  oled_printFixed( 2, MENU_HEIGHT + 2 * LINE_HEIGHT, dictionary_get_string( DICT_WAIT_TO_INIT ), OLED_FONT_SIZE_11 );
+  oled_printFixed( 2, MENU_HEIGHT + 2 * LINE_HEIGHT, _get_msg( MENU_DRV_MSG_WAIT_TO_INIT ), OLED_FONT_SIZE_11 );
   oled_update();
   menu_init_buttons();
   ctx.state = MENU_STATE_IDLE;
@@ -453,7 +471,7 @@ static void menu_state_idle( menu_token_t* menu )
 
   if ( menu == NULL )
   {
-    oled_printFixed( 2, MENU_HEIGHT + 2 * LINE_HEIGHT, dictionary_get_string( DICT_MENU_IDLE_STATE ), OLED_FONT_SIZE_11 );
+    oled_printFixed( 2, MENU_HEIGHT + 2 * LINE_HEIGHT, _get_msg( MENU_DRV_MSG_IDLE_STATE ), OLED_FONT_SIZE_11 );
     oled_update();
     osDelay( 100 );
   }
@@ -498,7 +516,10 @@ static void menu_state_process( menu_token_t* menu )
     ctx.state = MENU_STATE_EXIT;
   }
 
-  drawBattery( 115, 1, battery_get_voltage(), battery_get_charging_status() );
+  if ( ctx.drawBattery != NULL )
+  {
+    ctx.drawBattery( 115, 1, battery_get_voltage(), battery_get_charging_status() );
+  }
 
   uint8_t signal = 0;
   if ( wifiDrvIsConnected() )
@@ -526,7 +547,10 @@ static void menu_state_process( menu_token_t* menu )
     }
   }
 
-  drawSignal( 100, 1, signal );
+  if ( ctx.drawSignal != NULL )
+  {
+    ctx.drawSignal( 100, 1, signal );
+  }
 
   oled_update();
   osDelay( 5 );
@@ -540,7 +564,7 @@ static void menu_state_process( menu_token_t* menu )
 static void menu_state_emergency_disable( void )
 {
   oled_clearScreen();
-  oled_printFixed( 2, MENU_HEIGHT, dictionary_get_string( DICT_MENU_STOP ), OLED_FONT_SIZE_26 );    //Font_16x26
+  oled_printFixed( 2, MENU_HEIGHT, _get_msg( MENU_DRV_MSG_MENU_STOP ), OLED_FONT_SIZE_26 );    //Font_16x26
   oled_update();
   if ( ctx.led_cnt % 10 == 0 )
   {
@@ -582,7 +606,7 @@ static void menu_state_error_check( menu_token_t* menu )
     oled_clearScreen();
     if ( menu != NULL )
     {
-      oled_printFixed( 2, 0, dictionary_get_string( menu->name_dict ), OLED_FONT_SIZE_16 );
+      oled_printFixed( 2, 0, "ERROR", OLED_FONT_SIZE_16 );
     }
 
     oled_printFixed( 2, MENU_HEIGHT, "Error menu_drv", OLED_FONT_SIZE_11 );
@@ -638,7 +662,7 @@ static void menu_state_power_off_count( menu_token_t* menu )
   }
 
   oled_clearScreen();
-  oled_printFixed( 2, 5, dictionary_get_string( DICT_POWER_OFF ), OLED_FONT_SIZE_26 );
+  oled_printFixed( 2, 5, _get_msg( MENU_DRV_MSG_POWER_OFF ), OLED_FONT_SIZE_26 );
 
   sprintf( buff, "%d", time );
   oled_printFixed( 52, 2 * MENU_HEIGHT, buff, OLED_FONT_SIZE_26 );
@@ -670,7 +694,7 @@ static void menu_task( void* arg )
     {
       if ( menu != NULL )
       {
-        LOG( PRINT_INFO, "state: %s, menu %s", state_name[ctx.state], dictionary_get_string( menu->name_dict ) );
+        LOG( PRINT_INFO, "state: %s, menu %d", state_name[ctx.state], menu->name_dict );
       }
       else
       {
@@ -806,10 +830,11 @@ void menuDrvDisableSystemProcess( void )
   }
 }
 
-void menuDrvInit( menu_drv_init_t init_type )
+void menuDrvInit( menu_drv_init_t init_type, void ( *toggleEmergencyDisable )( void ) )
 {
   ctx.update_screen_req = xSemaphoreCreateBinary();
   ctx.block_power_off_timer = MS2ST( POWER_OFF_BLOCK_MS ) + xTaskGetTickCount();
+  ctx.toggleEmergencyDisable = toggleEmergencyDisable;
 
   if ( init_type == MENU_DRV_LOW_BATTERY_INIT )
   {
@@ -832,6 +857,20 @@ void menuDrvInit( menu_drv_init_t init_type )
 #else
   xTaskCreate( menu_task, "menu_task", 8192, NULL, 12, NULL );
 #endif
-  menuBackendInit();
   update_screen();
+}
+
+void menuDrvSetDrawBatteryCb( menuDrvDrawBatteryCb_t cb )
+{
+  ctx.drawBattery = cb;
+}
+
+void menuDrvSetDrawSignalCb( menuDrvDrawSignalCb_t cb )
+{
+  ctx.drawSignal = cb;
+}
+
+void menuDrvSetGetMsgCb( menuDrvGetMsgCb_t cb )
+{
+  ctx.getMsg = cb;
 }
