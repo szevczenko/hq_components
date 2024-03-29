@@ -18,10 +18,12 @@
 
 #ifdef PROJECT_PARAMETERS
 #include "project_parameters.h"
+#else
+#warning "project parameters not include"
 #endif
 
-#ifndef PROJECT_PARAMETERS_LIST
-#define PROJECT_PARAMETERS_LIST
+#ifndef PARAMETERS_U32_LIST
+#define PARAMETERS_U32_LIST
 #endif
 
 /* Public types --------------------------------------------------------------*/
@@ -30,6 +32,9 @@ typedef void ( *param_set_cb )( void* user_data, uint32_t value );
 
 typedef enum
 {
+  #define PARAM(param, min_value, max_value, default_value) param,
+  PARAMETERS_U32_LIST
+  #undef PARAM
   PARAM_BOOT_UP_SYSTEM,
   PARAM_EMERGENCY_DISABLE,
   PARAM_POWER_ON_MIN,
