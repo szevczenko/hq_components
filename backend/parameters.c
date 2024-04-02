@@ -20,6 +20,11 @@
 
 static parameter_t parameters[] =
   {
+    #define PARAM(_param, _min_value, _max_value, _default_value) \
+            [_param] = {.min_value = _min_value, .max_value = _max_value, \
+            .default_value = _default_value, .name = #_param},
+    PARAMETERS_U32_LIST
+    #undef PARAM
     [PARAM_BOOT_UP_SYSTEM] = { .max_value = 1, .default_value = 1, .name = "PARAM_BOOT_UP_SYSTEM" },
     [PARAM_EMERGENCY_DISABLE] = { .max_value = 1, .default_value = 0, .name = "PARAM_EMERGENCY_DISABLE" },
     [PARAM_POWER_ON_MIN] = { .min_value = 5, .max_value = 100, .default_value = 30, .name = "PARAM_POWER_ON_MIN" },
