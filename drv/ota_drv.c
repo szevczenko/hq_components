@@ -8,7 +8,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 
-#include "ota.h"
+#include "ota_drv.h"
 
 #include <inttypes.h>
 #include <stdlib.h>
