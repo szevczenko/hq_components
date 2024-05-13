@@ -65,7 +65,7 @@ static void _change_state( enum state_t new_state )
 
 static void _state_idle( void )
 {
-  if ( ( false == wifiDrvIsConnected() ) && ( false == cmdClientIsConnected() ) )
+  if ( false == wifiDrvIsConnected() )
   {
     ctx.power_off_timer = xTaskGetTickCount() + MS2ST( POWER_OFF_TIME_MIN * 60 * 1000 );
     _change_state( STATE_WAIT_TO_DISABLE );
@@ -75,7 +75,7 @@ static void _state_idle( void )
 
 static void _state_wait_to_disable( void )
 {
-  if ( wifiDrvIsConnected() && cmdClientIsConnected() )
+  if ( wifiDrvIsConnected() )
   {
     _change_state( STATE_IDLE );
     return;

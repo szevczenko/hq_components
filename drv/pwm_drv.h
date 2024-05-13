@@ -34,6 +34,7 @@ typedef struct
   uint32_t ticks_period;
   uint8_t pin;
   uint8_t timer_group;
+  bool is_hold_on;
 
   /* Private variables */
   void* timer;

@@ -79,8 +79,8 @@ void set_servo_red_led( bool on_off )
 
 void init_leds( void )
 {
-  PWMDrv_Init( &pwm_drv[LED_UPPER_RED], "up_red", PWM_DRV_DUTY_MODE_HIGH, 10000, 0, MOTOR_LED_RED );
-  PWMDrv_Init( &pwm_drv[LED_BOTTOM_RED], "down_red", PWM_DRV_DUTY_MODE_HIGH, 10000, 0, SERVO_VIBRO_LED_RED );
-  PWMDrv_Init( &pwm_drv[LED_UPPER_GREEN], "up_green", PWM_DRV_DUTY_MODE_HIGH, 10000, 0, MOTOR_LED_GREEN );
-  PWMDrv_Init( &pwm_drv[LED_BOTTOM_GREEN], "down_green", PWM_DRV_DUTY_MODE_HIGH, 10000, 1, SERVO_VIBRO_LED_GREEN );
+  PWMDrv_Init( &pwm_drv[LED_UPPER_RED], "up_red", PWM_DRV_DUTY_MODE_HIGH, 100, 0, MOTOR_LED_RED );
+  PWMDrv_Init( &pwm_drv[LED_BOTTOM_RED], "down_red", PWM_DRV_DUTY_MODE_HIGH, 100, 0, SERVO_VIBRO_LED_RED );
+  PWMDrv_Init( &pwm_drv[LED_UPPER_GREEN], "up_green", PWM_DRV_DUTY_MODE_HIGH, 100, 0, MOTOR_LED_GREEN );
+  PWMDrv_Init( &pwm_drv[LED_BOTTOM_GREEN], "down_green", PWM_DRV_DUTY_MODE_HIGH, 100, 1, SERVO_VIBRO_LED_GREEN );
 }

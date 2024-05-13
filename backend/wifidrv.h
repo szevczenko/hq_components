@@ -16,8 +16,10 @@
 #define WIFI_SOLARKA_NAME "SOLA"
 #define WIFI_SIEWNIK_NAME "SIEW"
 #define WIFI_VALVE_NAME   "VALV"
-
+ 
+#ifndef WIFI_AP_NAME
 #define WIFI_AP_NAME WIFI_VALVE_NAME
+#endif
 
 #ifndef WIFI_AP_PASSWORD
 #define WIFI_AP_PASSWORD "SuperTrudne1!-_"

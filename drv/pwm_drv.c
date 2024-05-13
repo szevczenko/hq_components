@@ -20,7 +20,7 @@
 #define DEBUG_LVL   PRINT_DEBUG
 #define TAG         MODULE_NAME
 
-#if CONFIG_DEBUG_DEVICE_MANAGER
+#if 1
 #define LOG( _lvl, ... ) \
   debug_printf( DEBUG_LVL, _lvl, MODULE_NAME __VA_ARGS__ )
 #else
@@ -114,6 +114,7 @@ void PWMDrv_Init( pwm_drv_t* dev, const char* name, pwm_drv_mode_t mode, uint32_
   dev->frequency = frequency;
   dev->pin = pin;
   dev->timer_group = timer_group;
+  dev->is_hold_on = false;
   _init_pwm( dev );
 }
 
@@ -121,8 +122,14 @@ error_code_t PWMDrv_SetDuty( pwm_drv_t* dev, float duty )
 {
   mcpwm_cmpr_handle_t comparator = (mcpwm_cmpr_handle_t) dev->comparator;
   mcpwm_timer_handle_t timer = (mcpwm_timer_handle_t) dev->timer;
-  mcpwm_timer_start_stop( timer, MCPWM_TIMER_START_NO_STOP );
+  mcpwm_gen_handle_t generator = (mcpwm_gen_handle_t) dev->generator;
+  if ( dev->is_hold_on == true )
+  {
+    ESP_ERROR_CHECK( mcpwm_generator_set_force_level( generator, -1, true ) );
+  }
+  esp_err_t code = mcpwm_timer_start_stop( timer, MCPWM_TIMER_START_NO_STOP );
   ESP_ERROR_CHECK( mcpwm_comparator_set_compare_value( comparator, dev->ticks_period * duty / 100 ) );
+  dev->is_hold_on = false;
   return ERROR_CODE_OK;
 }
 
@@ -134,7 +141,9 @@ error_code_t PWMDrv_SetFrequency( pwm_drv_t* dev, uint32_t frequency )
 error_code_t PWMDrv_Stop( pwm_drv_t* dev, bool is_high )
 {
   mcpwm_timer_handle_t timer = (mcpwm_timer_handle_t) dev->timer;
-  mcpwm_timer_start_stop( timer, MCPWM_TIMER_STOP_EMPTY );
-  gpio_set_level( dev->pin, is_high );
+  mcpwm_gen_handle_t generator = (mcpwm_gen_handle_t) dev->generator;
+  esp_err_t code = mcpwm_timer_start_stop( timer, MCPWM_TIMER_STOP_FULL );
+  ESP_ERROR_CHECK( mcpwm_generator_set_force_level( generator, (int) is_high, true ) );
+  dev->is_hold_on = true;
   return ERROR_CODE_OK;
 }

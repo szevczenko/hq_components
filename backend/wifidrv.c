@@ -288,7 +288,7 @@ static void _debug_handler( void* arg, esp_event_base_t event_base, int32_t even
   if ( event_id == WIFI_EVENT_STA_DISCONNECTED )
   {
     __attribute__( ( unused ) ) wifi_event_sta_disconnected_t* data = event_data;
-    LOG( PRINT_DEBUG, "Ssid %s bssid %x.%x.%x.%x.%x.%x len %d reason %d/n/r", data->ssid, data->bssid[0],
+    LOG( PRINT_DEBUG, "Ssid %s bssid %x.%x.%x.%x.%x.%x len %d reason %d", data->ssid, data->bssid[0],
          data->bssid[1], data->bssid[2], data->bssid[3], data->bssid[4], data->bssid[5], data->ssid_len,
          data->reason );
   }

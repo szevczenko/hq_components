@@ -33,6 +33,7 @@ const char* error_codes[ERROR_CODE_LAST] =
     [ERROR_CODE_FAIL] = "FAIL",
     [ERROR_CODE_ERROR_PARSING] = "ERROR PARSING",
     [ERROR_CODE_UNKNOWN_MQTT_TOPIC_TYPE] = "UNKNOWN_MQTT_TOPIC_TYPE",
+    [ERROR_CODE_QUEUE_IS_FULL] = "QUEUE_IS_FULL",
 };
 
 /* Public functions ---------------------------------------------------------*/
