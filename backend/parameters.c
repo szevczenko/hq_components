@@ -20,20 +20,26 @@
 
 static parameter_t parameters[] =
   {
-    #define PARAM(_param, _min_value, _max_value, _default_value) \
+    #define PARAM(_param, _min_value, _max_value, _default_value, _name) \
             [_param] = {.min_value = _min_value, .max_value = _max_value, \
-            .default_value = _default_value, .name = #_param},
+            .default_value = _default_value, .name = _name},
     PARAMETERS_U32_LIST
     #undef PARAM
-    [PARAM_BOOT_UP_SYSTEM] = { .max_value = 1, .default_value = 1, .name = "PARAM_BOOT_UP_SYSTEM" },
-    [PARAM_EMERGENCY_DISABLE] = { .max_value = 1, .default_value = 0, .name = "PARAM_EMERGENCY_DISABLE" },
-    [PARAM_POWER_ON_MIN] = { .min_value = 5, .max_value = 100, .default_value = 30, .name = "PARAM_POWER_ON_MIN" },
-    [PARAM_BUZZER] = { .max_value = 1, .default_value = 1, .name = "PARAM_BUZZER" },
-    [PARAM_BRIGHTNESS] = { .max_value = 10, .default_value = 10, .name = "PARAM_BRIGHTNESS" },
+    [PARAM_BOOT_UP_SYSTEM] = { .max_value = 1, .default_value = 1, .name = "boot_up" },
+    [PARAM_EMERGENCY_DISABLE] = { .max_value = 1, .default_value = 0, .name = "emergency_disable" },
+    [PARAM_POWER_ON_MIN] = { .min_value = 5, .max_value = 100, .default_value = 30, .name = "power_on_minutes" },
+    [PARAM_BUZZER] = { .max_value = 1, .default_value = 1, .name = "buzzer" },
+    [PARAM_BRIGHTNESS] = { .max_value = 10, .default_value = 10, .name = "brightness" },
+};
+
+static const char *parameter_string_names[] = 
+{
+  [PARAM_STR_CONTROLLER_SN] = "sn",
 };
 
 static uint32_t parameters_value[PARAM_LAST_VALUE];
 static char parameters_string[PARAM_STR_LAST_VALUE][STR_SIZE];
+
 
 static bool _read_parameters( void )
 {
@@ -94,6 +100,26 @@ void parameters_debugPrintValue( parameter_value_t val )
   }
 
   LOG( PRINT_DEBUG, "Param: %s : %d", parameters[val].name, parameters_value[val] );
+}
+
+const char* parameters_getName( parameter_value_t val )
+{
+  if ( val >= PARAM_LAST_VALUE )
+  {
+    return NULL;
+  }
+
+  return parameters[val].name;
+}
+
+const char* parameters_getStringName( parameter_string_t val )
+{
+  if ( val >= PARAM_STR_LAST_VALUE )
+  {
+    return NULL;
+  }
+
+  return parameter_string_names[val];
 }
 
 bool parameters_save( void )

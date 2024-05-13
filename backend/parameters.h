@@ -32,10 +32,10 @@ typedef void ( *param_set_cb )( void* user_data, uint32_t value );
 
 typedef enum
 {
-  #define PARAM(param, min_value, max_value, default_value) param,
+#define PARAM( param, min_value, max_value, default_value, name ) param,
   PARAMETERS_U32_LIST
-  #undef PARAM
-  PARAM_BOOT_UP_SYSTEM,
+#undef PARAM
+    PARAM_BOOT_UP_SYSTEM,
   PARAM_EMERGENCY_DISABLE,
   PARAM_POWER_ON_MIN,
   PARAM_BUZZER,
@@ -141,5 +141,19 @@ void parameters_debugPrint( void );
  * @param   [in] val - parameter which print value
  */
 void parameters_debugPrintValue( parameter_value_t val );
+
+/**
+ * @brief   Get parameters name
+ * @param   [in] val - parameter which get name
+ * @return  Parameter name or NULL if val greater as last value
+ */
+const char* parameters_getName( parameter_value_t val );
+
+/**
+ * @brief   Get string parameters name
+ * @param   [in] val - parameter which get name
+ * @return  Parameter name or NULL if val greater as last value
+ */
+const char* parameters_getStringName( parameter_string_t val );
 
 #endif
