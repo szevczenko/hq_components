@@ -127,7 +127,7 @@ error_code_t PWMDrv_SetDuty( pwm_drv_t* dev, float duty )
   {
     ESP_ERROR_CHECK( mcpwm_generator_set_force_level( generator, -1, true ) );
   }
-  esp_err_t code = mcpwm_timer_start_stop( timer, MCPWM_TIMER_START_NO_STOP );
+  mcpwm_timer_start_stop( timer, MCPWM_TIMER_START_NO_STOP );
   ESP_ERROR_CHECK( mcpwm_comparator_set_compare_value( comparator, dev->ticks_period * duty / 100 ) );
   dev->is_hold_on = false;
   return ERROR_CODE_OK;
@@ -142,7 +142,7 @@ error_code_t PWMDrv_Stop( pwm_drv_t* dev, bool is_high )
 {
   mcpwm_timer_handle_t timer = (mcpwm_timer_handle_t) dev->timer;
   mcpwm_gen_handle_t generator = (mcpwm_gen_handle_t) dev->generator;
-  esp_err_t code = mcpwm_timer_start_stop( timer, MCPWM_TIMER_STOP_FULL );
+  mcpwm_timer_start_stop( timer, MCPWM_TIMER_STOP_FULL );
   ESP_ERROR_CHECK( mcpwm_generator_set_force_level( generator, (int) is_high, true ) );
   dev->is_hold_on = true;
   return ERROR_CODE_OK;
