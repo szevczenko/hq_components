@@ -234,12 +234,17 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
       }
       else if ( request->type == PARAM_TYPE_STRING )
       {
+        assert( hm->body.len < sizeof( request->data.str.value ) );
         memcpy( request->data.str.value, hm->body.ptr, hm->body.len );
         assert( parameters_setString( request->data.str.parameter, request->data.str.value ) );
       }
     }
 
     _set_response( request, code );
+    if ( code != 200 )
+    {
+      LOG( PRINT_ERROR, "code %d, %.*s", code, hm->body.len, hm->body.ptr );
+    }
     c->is_draining = 1;    // Tell mongoose to close this connection
     done = true;
   }
@@ -249,7 +254,6 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
   }
   else if ( ev == MG_EV_CLOSE )
   {
-    const char* name = _get_param_name( request );
     if ( request->wait_response )
     {
       xSemaphoreGive( request->semaphore );
@@ -263,6 +267,23 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
   }
 }
 
+static void _set_request_url( http_request_t* request )
+{
+  const char* param_name = _get_param_name( request );
+  if ( request->type == PARAM_TYPE_U32 )
+  {
+    snprintf( request_url, sizeof( request_url ) - 1, "%s/api/parameter_u32/%s", HOSTNAME, param_name );
+  }
+  else if ( request->type == PARAM_TYPE_STRING )
+  {
+    snprintf( request_url, sizeof( request_url ) - 1, "%s/api/parameter_str/%s", HOSTNAME, param_name );
+  }
+  else
+  {
+    assert( 0 );
+  }
+}
+
 static void _task( void* argv )
 {
   // Create client connection
@@ -273,8 +294,8 @@ static void _task( void* argv )
   {
     if ( xQueueReceive( request_queue, &request, portMAX_DELAY ) == pdTRUE )
     {
-      const char* param_name = _get_param_name( request );
-      snprintf( request_url, sizeof( request_url ) - 1, "%s/api/parameter/%s", HOSTNAME, param_name );
+      _set_request_url( request );
+
       done = false;
       struct mg_connection* c = mg_http_connect( &mgr, request_url, fn, (void*) request );
       assert( c );
@@ -332,4 +353,31 @@ error_code_t HTTPParamClient_SetU32ValueDontWait( parameter_value_t parameter, u
     .method = HTTP_SERVER_METHOD_POST,
   };
   return _send_request( &request, false );
+}
+
+error_code_t HTTPParamClient_SetStrValue( parameter_string_t parameter, const char* value, uint32_t timeout )
+{
+  http_request_t request = {
+    .type = PARAM_TYPE_STRING,
+    .data.str.parameter = parameter,
+    .method = HTTP_SERVER_METHOD_POST,
+  };
+  strncpy( request.data.str.value, value, sizeof( request.data.str.value ) );
+  return _send_request( &request, true );
+}
+
+error_code_t HTTPParamClient_GetStrValue( parameter_string_t parameter, char* value, uint32_t value_len, uint32_t timeout )
+{
+  http_request_t request = {
+    .type = PARAM_TYPE_STRING,
+    .data.str.parameter = parameter,
+    .method = HTTP_SERVER_METHOD_GET,
+  };
+
+  error_code_t result = _send_request( &request, true );
+  if ( result && value != NULL )
+  {
+    strncpy( value, request.data.str.value, value_len );
+  }
+  return result;
 }

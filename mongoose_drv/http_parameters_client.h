@@ -43,4 +43,14 @@ error_code_t HTTPParamClient_GetU32Value( parameter_value_t parameter, uint32_t*
  */
 error_code_t HTTPParamClient_SetU32ValueDontWait( parameter_value_t parameter, uint32_t value );
 
+/**
+ * @brief   Set string value waiting respose
+ */
+error_code_t HTTPParamClient_SetStrValue( parameter_string_t parameter, const char* value, uint32_t timeout );
+
+/**
+ * @brief   Set string value waiting respose
+ */
+error_code_t HTTPParamClient_GetStrValue( parameter_string_t parameter, char* value, uint32_t value_len, uint32_t timeout );
+
 #endif
