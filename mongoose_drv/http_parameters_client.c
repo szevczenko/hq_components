@@ -347,6 +347,7 @@ error_code_t HTTPParamClient_GetU32Value( parameter_value_t parameter, uint32_t*
 
 error_code_t HTTPParamClient_SetU32ValueDontWait( parameter_value_t parameter, uint32_t value )
 {
+  assert( parameters_setValue( parameter, value ) );
   http_request_t request = {
     .type = PARAM_TYPE_U32,
     .data.u32.parameter = parameter,
