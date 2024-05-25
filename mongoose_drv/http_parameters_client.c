@@ -41,6 +41,7 @@ typedef enum
 {
   PARAM_TYPE_U32,
   PARAM_TYPE_STRING,
+  PARAM_TYPE_PING,
   PARAM_TYPE_LAST
 } param_type_t;
 
@@ -180,6 +181,10 @@ static bool _post_message( struct mg_connection* c, http_request_t* request )
     {
       content_length = sprintf( s_post_data, "%s", request->data.str.value );
     }
+    else if ( request->type == PARAM_TYPE_PING )
+    {
+      content_length = 0;
+    }
   }
 
   mg_printf( c,
@@ -278,6 +283,10 @@ static void _set_request_url( http_request_t* request )
   {
     snprintf( request_url, sizeof( request_url ) - 1, "%s/api/parameter_str/%s", HOSTNAME, param_name );
   }
+  else if ( request->type == PARAM_TYPE_PING )
+  {
+    snprintf( request_url, sizeof( request_url ) - 1, "%s/api/ping", HOSTNAME );
+  }
   else
   {
     assert( 0 );
@@ -292,7 +301,7 @@ static void _task( void* argv )
   xSemaphoreGive( mutex );
   while ( true )
   {
-    if ( xQueueReceive( request_queue, &request, portMAX_DELAY ) == pdTRUE )
+    if ( xQueueReceive( request_queue, &request, MS2ST( 3500 ) ) == pdTRUE )
     {
       _set_request_url( request );
 
@@ -304,6 +313,11 @@ static void _task( void* argv )
         mg_mgr_poll( &mgr, 50 );
       }
       xSemaphoreTake( mutex, portMAX_DELAY );
+    }
+    else
+    {
+      // Keep alive
+      HTTPParamClient_Ping();
     }
   }
 }
@@ -382,4 +396,13 @@ error_code_t HTTPParamClient_GetStrValue( parameter_string_t parameter, char* va
     strncpy( value, request.data.str.value, value_len );
   }
   return result;
+}
+
+error_code_t HTTPParamClient_Ping( void )
+{
+  http_request_t request = {
+    .type = PARAM_TYPE_PING,
+    .method = HTTP_SERVER_METHOD_POST,
+  };
+  return _send_request( &request, false );
 }

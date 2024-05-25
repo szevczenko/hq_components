@@ -34,6 +34,8 @@
 #define API_U32_NAME "parameter_u32"
 #define API_STR_URI  "/api/parameter_str/"
 #define API_STR_NAME "parameter_str"
+#define API_PING_URI  "/api/ping/"
+#define API_PING_NAME "ping"
 
 /* Private functions declaration ---------------------------------------------*/
 
@@ -155,6 +157,15 @@ static HTTPServerResponse_t _parameters_str_parse_cb( struct mg_str* uri, struct
   return response;
 }
 
+static HTTPServerResponse_t _ping_parse_cb( struct mg_str* uri, struct mg_str* data, HTTPServerMethod_t method )
+{
+  HTTPServerResponse_t response = { .msg = response_buffer };
+  sprintf( response_buffer, "PONG" );
+  response.code = 200;
+
+  return response;
+}
+
 /* Public functions ---------------------------------------------------------*/
 
 void ParametersAPI_Init( void )
@@ -169,6 +180,12 @@ void ParametersAPI_Init( void )
     .cb = _parameters_str_parse_cb,
   };
 
+  HTTPServerApiToken_t token_ping = {
+    .api_name = API_PING_NAME,
+    .cb = _ping_parse_cb,
+  };
+
   HTTPServer_AddApiToken( &token );
   HTTPServer_AddApiToken( &token_str );
+  HTTPServer_AddApiToken( &token_ping );
 }

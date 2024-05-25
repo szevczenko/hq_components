@@ -16,7 +16,7 @@
 #define WIFI_SOLARKA_NAME "SOLA"
 #define WIFI_SIEWNIK_NAME "SIEW"
 #define WIFI_VALVE_NAME   "VALV"
- 
+
 #ifndef WIFI_AP_NAME
 #define WIFI_AP_NAME WIFI_VALVE_NAME
 #endif
@@ -171,5 +171,10 @@ void wifiDrvRegisterConnectCb( wifi_drv_callback cb );
  * @brief   Register disconnect callback
  */
 void wifiDrvRegisterDisconnectCb( wifi_drv_callback cb );
+
+/**
+ * @brief   Get client count connected to AP
+ */
+uint32_t wifiDrvGetClientCount( void );
 
 #endif

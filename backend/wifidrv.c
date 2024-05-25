@@ -29,6 +29,8 @@
 #define LOG( PRINT_INFO, ... )
 #endif
 
+#define USE_DEBUG_HANDLER 0
+
 #define CALLBACKS_LIST_SIZE            8
 #define DEFAULT_SCAN_LIST_SIZE         32
 #define CONFIG_TCPIP_EVENT_THD_WA_SIZE 4096
@@ -78,9 +80,12 @@ typedef struct
   bool read_wifi_data;
   uint32_t connect_attemps;
   uint32_t reason_disconnect;
+  uint32_t client_cnt;
+
   wifi_ap_record_t scan_list[DEFAULT_SCAN_LIST_SIZE];
   wifi_config_t wifi_config;
   wifiConData_t wifi_con_data;
+  wifi_sta_list_t gl_sta_list;
   int rssi;
 
   callback_list_t on_connect_cb;
@@ -96,7 +101,7 @@ wifi_config_t wifi_config_ap =
       {
            .password = WIFI_AP_PASSWORD,
            .max_connection = 2,
-           .authmode = WIFI_AUTH_WPA_WPA2_PSK},
+           .authmode = WIFI_AUTH_WPA_WPA2_PSK },
 };
 
 //esp_pm_config_esp8266_t pm_config;
@@ -282,6 +287,7 @@ static void _got_ip_event_handler( void* arg, esp_event_base_t event_base, int32
   }
 }
 
+#if USE_DEBUG_HANDLER
 static void _debug_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
 {
   LOG( PRINT_DEBUG, "%s EVENT_WIFI %s %d", __func__, event_base, event_id );
@@ -291,6 +297,28 @@ static void _debug_handler( void* arg, esp_event_base_t event_base, int32_t even
     LOG( PRINT_DEBUG, "Ssid %s bssid %x.%x.%x.%x.%x.%x len %d reason %d", data->ssid, data->bssid[0],
          data->bssid[1], data->bssid[2], data->bssid[3], data->bssid[4], data->bssid[5], data->ssid_len,
          data->reason );
+  }
+}
+#endif
+
+static void _client_connection_handler( void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data )
+{
+  switch ( event_id )
+  {
+    case WIFI_EVENT_AP_STACONNECTED:
+      {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        LOG( PRINT_DEBUG, "station " MACSTR " join, AID=%d", MAC2STR( event->mac ), event->aid );
+        ctx.client_cnt++;
+        break;
+      }
+    case WIFI_EVENT_AP_STADISCONNECTED:
+      {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        LOG( PRINT_DEBUG, "station " MACSTR " leave, AID=%d", MAC2STR( event->mac ), event->aid );
+        ctx.client_cnt--;
+        break;
+      }
   }
 }
 
@@ -353,8 +381,11 @@ static void _state_init( void )
   ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_on_wifi_disconnect, NULL ) );
   ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &_wifi_scan_done_handler, NULL ) );
   ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, IP_EVENT_STA_GOT_IP, &_got_ip_event_handler, NULL ) );
+  ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_MASK_ALL, &_client_connection_handler, NULL ) );
+#if USE_DEBUG_HANDLER
   ESP_ERROR_CHECK( esp_event_handler_register( WIFI_EVENT, WIFI_EVENT_MASK_ALL, &_debug_handler, NULL ) );
   ESP_ERROR_CHECK( esp_event_handler_register( IP_EVENT, WIFI_EVENT_MASK_ALL, &_debug_handler, NULL ) );
+#endif
 
   _change_state( WIFI_APP_IDLE );
   LOG( PRINT_INFO, "Wifi init ok" );
@@ -780,4 +811,9 @@ void wifiDrvRegisterConnectCb( wifi_drv_callback cb )
 void wifiDrvRegisterDisconnectCb( wifi_drv_callback cb )
 {
   _add_to_list( &ctx.on_disconnect_cb, cb );
+}
+
+uint32_t wifiDrvGetClientCount( void )
+{
+  return ctx.client_cnt;
 }

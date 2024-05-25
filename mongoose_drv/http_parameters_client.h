@@ -53,4 +53,9 @@ error_code_t HTTPParamClient_SetStrValue( parameter_string_t parameter, const ch
  */
 error_code_t HTTPParamClient_GetStrValue( parameter_string_t parameter, char* value, uint32_t value_len, uint32_t timeout );
 
+/**
+ * @brief   Send ping msg
+ */
+error_code_t HTTPParamClient_Ping( void );
+
 #endif
