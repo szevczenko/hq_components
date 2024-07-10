@@ -27,6 +27,7 @@
 #include "esp_tls.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ota.h"
 
 /* Private macros ------------------------------------------------------------*/
 #define MODULE_NAME "[OTA] "
@@ -45,6 +46,8 @@ extern const uint8_t server_cert_pem_end[] asm( "_binary_ca_cert_pem_end" );
 
 /* Private variables ---------------------------------------------------------*/
 static char localResponseBuffer[2048];
+static size_t percentage_download;
+static ota_driver_state_t state;
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -235,6 +238,7 @@ static bool _download_and_update_firmware( const char* url )
     .max_http_request_size = 8 * 1024,
   };
 
+  state = OTA_DRIVER_STATE_DOWNLOAD;
   esp_https_ota_handle_t https_ota_handle = NULL;
   esp_err_t err = esp_https_ota_begin( &ota_config, &https_ota_handle );
   if ( err != ESP_OK )
@@ -264,6 +268,7 @@ static bool _download_and_update_firmware( const char* url )
     }
     int download = esp_https_ota_get_image_len_read( https_ota_handle );
     LOG( PRINT_DEBUG, "Image bytes read: %d from %d", download, file_size );
+    percentage_download = download * 100 / file_size;
   }
 
   if ( esp_https_ota_is_complete_data_received( https_ota_handle ) != true )
@@ -277,6 +282,7 @@ static bool _download_and_update_firmware( const char* url )
     if ( ( err == ESP_OK ) && ( ota_finish_err == ESP_OK ) )
     {
       LOG( PRINT_INFO, "ESP_HTTPS_OTA upgrade successful. Wait rebooting ..." );
+      state = OTA_DRIVER_STATE_DONWLOAD_FINISHED;
       return true;
     }
   }
@@ -284,13 +290,13 @@ static bool _download_and_update_firmware( const char* url )
 ota_end:
   esp_https_ota_abort( https_ota_handle );
   LOG( PRINT_ERROR, "ESP_HTTPS_OTA upgrade failed" );
+  state = OTA_DRIVER_STATE_ERROR;
   return false;
 }
 
-/* State machine functions -----------------------------------------------------*/
-
 static void _init( void )
 {
+  state = OTA_DRIVER_STATE_IDLE;
   esp_event_handler_register( ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, &_ota_event_handler, NULL );
   const esp_partition_t* running = esp_ota_get_running_partition();
   esp_ota_img_states_t ota_state;
@@ -310,12 +316,32 @@ static void _init( void )
   }
 }
 
+static void _task( void* pvParameters )
+{
+  const char* url = (const char*) pvParameters;
+  _download_and_update_firmware( url );
+  vTaskDelete( NULL );
+}
+
+/* Public functions -----------------------------------------------------*/
+
 bool OTA_Download( const char* url )
 {
-  return _download_and_update_firmware( url );
+  BaseType_t result = xTaskCreate( _task, "ota_task", 8096, (void*) url, 13, NULL );
+  return result == pdPASS;
 }
 
 void OTA_Init( void )
 {
   _init();
+}
+
+ota_driver_state_t OTA_GetState( void )
+{
+  return state;
+}
+
+size_t OTA_GetDownloadPercentage( void )
+{
+  return percentage_download;
 }
