@@ -18,8 +18,6 @@
 
 #ifdef PROJECT_PARAMETERS
 #include "project_parameters.h"
-#else
-#warning "project parameters not include"
 #endif
 
 #ifndef PARAMETERS_U32_LIST

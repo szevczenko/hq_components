@@ -5,7 +5,6 @@
 // #include "ssd1306.h"
 #include "battery.h"
 #include "buzzer.h"
-#include "cmd_client.h"
 #include "driver/gpio.h"
 #include "esp_sleep.h"
 #include "esp_wifi.h"

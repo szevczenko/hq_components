@@ -16,7 +16,6 @@
 #include "dev_config.h"
 #include "http_server.h"
 #include "parameters.h"
-#include "parse_cmd.h"
 
 /* Private macros ------------------------------------------------------------*/
 
@@ -129,8 +128,8 @@ static HTTPServerResponse_t _parameters_str_parse_cb( struct mg_str* uri, struct
 
         case HTTP_SERVER_METHOD_POST:
           assert( data );
-          assert( data->len < PARSE_CMD_MAX_STRING_LEN );
-          char str[PARSE_CMD_MAX_STRING_LEN] = {};
+          assert( data->len < DEV_CONFIG_MAX_STRING_LEN );
+          char str[DEV_CONFIG_MAX_STRING_LEN] = {};
           strncpy( str, data->ptr, data->len );
           if ( parameters_setString( i, str ) )
           {

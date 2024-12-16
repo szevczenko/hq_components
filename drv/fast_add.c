@@ -1,6 +1,9 @@
 #include "fast_add.h"
 
 #include "app_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #define FAST_ADD_LIST_SIZE          8
 #define CONFIG_FAST_ADD_THD_WA_SIZE 2048

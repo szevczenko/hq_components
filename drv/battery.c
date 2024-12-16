@@ -8,6 +8,7 @@
 #include "esp_adc/adc_oneshot.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "power_on.h"
 
 #define MODULE_NAME "[Battery] "

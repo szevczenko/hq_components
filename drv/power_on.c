@@ -3,7 +3,6 @@
 #include <stdio.h>
 
 #include "app_config.h"
-#include "cmd_client.h"
 #include "driver/gpio.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -147,10 +146,10 @@ void power_on_enable_system( void )
 
 void power_on_disable_system( void )
 {
-  MOTOR_LED_SET_RED( 0 );
-  SERVO_VIBRO_LED_SET_RED( 0 );
-  MOTOR_LED_SET_GREEN( 0 );
-  SERVO_VIBRO_LED_SET_GREEN( 0 );
+  // MOTOR_LED_SET_RED( 0 );
+  // SERVO_VIBRO_LED_SET_RED( 0 );
+  // MOTOR_LED_SET_GREEN( 0 );
+  // SERVO_VIBRO_LED_SET_GREEN( 0 );
   gpio_set_level( POWER_HOLD_PIN, 0 );
 }
 

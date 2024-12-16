@@ -1,4 +1,4 @@
-idf_component_register(SRCS "cmd_client.c" "cmd_server.c" "parse_cmd.c" "wifidrv.c" 
-                            "cmd_client_req.c" "parameters.c"
+idf_component_register(SRCS "wifidrv.c"
+                             "parameters.c" "json.c"
                     INCLUDE_DIRS "." 
-                    REQUIRES main)
+                    PRIV_REQUIRES main esp_driver_gpio esp_event esp_netif esp_wifi nvs_flash)

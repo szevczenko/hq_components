@@ -16,7 +16,6 @@
 #include "http_parameters_client.h"
 #include "mongoose.h"
 #include "parameters.h"
-#include "parse_cmd.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -54,7 +53,7 @@ typedef struct
 typedef struct
 {
   parameter_string_t parameter;
-  char value[PARSE_CMD_MAX_STRING_LEN];
+  char value[DEV_CONFIG_MAX_STRING_LEN];
 } http_string_request_t;
 
 typedef struct
@@ -168,7 +167,7 @@ static bool _post_message( struct mg_connection* c, http_request_t* request )
 
   // Send request
   int content_length = 0;
-  static char s_post_data[PARSE_CMD_MAX_STRING_LEN];
+  static char s_post_data[DEV_CONFIG_MAX_STRING_LEN];
   memset( s_post_data, 0, sizeof( s_post_data ) );
 
   if ( request->method == HTTP_SERVER_METHOD_POST )

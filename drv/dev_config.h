@@ -15,6 +15,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Public macros ---------------------------------------------------------*/
+#define DEV_CONFIG_MAX_STRING_LEN 48
+
 /* Public types ----------------------------------------------------------*/
 enum config_print_lvl
 {

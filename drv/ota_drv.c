@@ -27,7 +27,6 @@
 #include "esp_tls.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "ota.h"
 
 /* Private macros ------------------------------------------------------------*/
 #define MODULE_NAME "[OTA] "
@@ -61,7 +60,7 @@ esp_err_t ota_bundle_attach( void* conf )
   return esp_crt_bundle_attach( ssl_conf );
 }
 
-esp_err_t _http_event_handler( esp_http_client_event_t* evt )
+static esp_err_t _http_event_handler( esp_http_client_event_t* evt )
 {
   static char* output_buffer;    // Buffer to store response of http request from event handler
   static int output_len;    // Stores number of bytes read
@@ -282,7 +281,7 @@ static bool _download_and_update_firmware( const char* url )
     if ( ( err == ESP_OK ) && ( ota_finish_err == ESP_OK ) )
     {
       LOG( PRINT_INFO, "ESP_HTTPS_OTA upgrade successful. Wait rebooting ..." );
-      state = OTA_DRIVER_STATE_DONWLOAD_FINISHED;
+      state = OTA_DRIVER_STATE_DOWNLOAD_FINISHED;
       return true;
     }
   }

@@ -2,7 +2,7 @@
 
 #include "app_config.h"
 #include "freertos/FreeRTOS.h"
-#include "parse_cmd.h"
+#include "freertos/task.h"
 
 #define MODULE_NAME "[Keep] "
 #define DEBUG_LVL   PRINT_INFO

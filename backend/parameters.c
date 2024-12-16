@@ -2,7 +2,6 @@
 
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "parse_cmd.h"
 
 #define MODULE_NAME "[PARAM] "
 #define DEBUG_LVL   PRINT_INFO
@@ -16,7 +15,7 @@
 
 #define STORAGE_NAMESPACE   "parameters"
 #define PARAMETERS_TAB_SIZE PARAM_LAST_VALUE
-#define STR_SIZE            PARSE_CMD_MAX_STRING_LEN + 1
+#define STR_SIZE            49
 
 static parameter_t parameters[] =
   {
@@ -226,7 +225,7 @@ bool parameters_setValue( parameter_value_t val, uint32_t value )
 
 bool parameters_setString( parameter_string_t val, const char* str )
 {
-  if ( val >= PARAM_STR_LAST_VALUE || strlen( str ) >= PARSE_CMD_MAX_STRING_LEN )
+  if ( val >= PARAM_STR_LAST_VALUE || strlen( str ) >= STR_SIZE - 1 )
   {
     return false;
   }

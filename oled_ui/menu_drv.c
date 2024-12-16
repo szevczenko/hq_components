@@ -568,10 +568,11 @@ static void menu_state_emergency_disable( void )
   oled_update();
   if ( ctx.led_cnt % 10 == 0 )
   {
-    MOTOR_LED_SET_GREEN( 0 );
-    SERVO_VIBRO_LED_SET_GREEN( 0 );
-    MOTOR_LED_SET_RED( ctx.emergency_led_status );
-    SERVO_VIBRO_LED_SET_RED( ctx.emergency_led_status );
+    //ToDo add callbacks
+    // MOTOR_LED_SET_GREEN( 0 );
+    // SERVO_VIBRO_LED_SET_GREEN( 0 );
+    // MOTOR_LED_SET_RED( ctx.emergency_led_status );
+    // SERVO_VIBRO_LED_SET_RED( ctx.emergency_led_status );
     ctx.emergency_led_status = ctx.emergency_led_status ? false : true;
   }
 
@@ -640,10 +641,10 @@ static void menu_state_power_off_count( menu_token_t* menu )
 
   if ( !ctx.power_off_req )
   {
-    MOTOR_LED_SET_RED( 0 );
-    SERVO_VIBRO_LED_SET_RED( 0 );
-    MOTOR_LED_SET_GREEN( 0 );
-    SERVO_VIBRO_LED_SET_GREEN( 0 );
+    // MOTOR_LED_SET_RED( 0 );
+    // SERVO_VIBRO_LED_SET_RED( 0 );
+    // MOTOR_LED_SET_GREEN( 0 );
+    // SERVO_VIBRO_LED_SET_GREEN( 0 );
     ctx.state = ctx.emergency_disable_is_active ? MENU_STATE_EMERGENCY_DISABLE : MENU_STATE_PROCESS;
     return;
   }
@@ -799,8 +800,8 @@ void menuDrvEnterEmergencyDisable( void )
   ctx.state = MENU_STATE_EMERGENCY_DISABLE;
   ctx.emergency_led_status = true;
   ctx.emergency_disable_is_active = true;
-  MOTOR_LED_SET_GREEN( 0 );
-  SERVO_VIBRO_LED_SET_GREEN( 0 );
+  // MOTOR_LED_SET_GREEN( 0 );
+  // SERVO_VIBRO_LED_SET_GREEN( 0 );
   ctx.led_cnt = 0;
   menu_deactivate_but();
 }
@@ -812,8 +813,8 @@ void menuDrvExitEmergencyDisable( void )
 
   ctx.emergency_disable_is_active = false;
 
-  MOTOR_LED_SET_RED( 0 );
-  SERVO_VIBRO_LED_SET_RED( 0 );
+  // MOTOR_LED_SET_RED( 0 );
+  // SERVO_VIBRO_LED_SET_RED( 0 );
 
   if ( menu != NULL )
   {
