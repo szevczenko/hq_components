@@ -14,6 +14,7 @@
 #include "app_config.h"
 #include "esp_system.h"
 #include "mongoose.h"
+#include "mongoose_task.h"
 
 /* Private macros ------------------------------------------------------------*/
 #define MODULE_NAME "[HTTP SERV] "
@@ -33,6 +34,7 @@
 #define ARRAY_SIZE( _array ) sizeof( _array ) / sizeof( _array[0] )
 #define CONNECTION_TIMEOUT   5000
 
+static mg_connection* nc;
 static HTTPServerApiToken_t tokens[16];
 static TickType_t last_msg_time;
 static uint32_t tokens_size;
@@ -90,23 +92,23 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
   }
 }
 
-static void _task( void* argv )
-{
-  LOG( PRINT_INFO, "Init http server" );
-  struct mg_mgr mgr;
-  mg_mgr_init( &mgr );    // Init manager
-  mg_log_set( MG_LL_INFO );    // Set log level
-  mg_http_listen( &mgr, HTTP_URL, fn, &mgr );    // Setup listener
-  for ( ;; )
-    mg_mgr_poll( &mgr, 1000 );    // Event loop
-  mg_mgr_free( &mgr );    // Cleanup
-}
-
 /* Public functions ---------------------------------------------------------*/
 
 void HTTPServer_Init( void )
 {
-  xTaskCreate( _task, "mongoose", 8096, NULL, 13, NULL );
+  if ( nc != NULL )
+  {
+    nc = mg_http_listen( &mgr, HTTP_URL, fn, &mgr );    // Setup listener
+  }
+}
+
+void HTTPServer_Deinit( void )
+{
+  if ( nc != NULL )
+  {
+    nc->is_closing = 1;
+  }
+  nc = NULL;
 }
 
 void HTTPServer_AddApiToken( HTTPServerApiToken_t* token )

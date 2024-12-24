@@ -53,6 +53,11 @@ typedef struct
 void HTTPServer_Init( void );
 
 /**
+ * @brief   Deinit HTTP server driver.
+ */
+void HTTPServer_Deinit( void );
+
+/**
  * @brief   Add API token.
  */
 void HTTPServer_AddApiToken( HTTPServerApiToken_t* token );
