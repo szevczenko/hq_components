@@ -332,9 +332,11 @@ static void _on_wifi_disconnect( void* arg, esp_event_base_t event_base, int32_t
 static void _scan_done_handler( void )
 {
   ctx.scanned_ap_num = DEFAULT_SCAN_LIST_SIZE;
-  ESP_ERROR_CHECK( esp_wifi_scan_get_ap_records( &ctx.scanned_ap_num, ctx.scan_list ) );
-  LOG( PRINT_INFO, "SCAN DONE %d %s!!!!!!", ctx.scanned_ap_num, ctx.scan_list[0].ssid );
-  _generate_access_points_json();
+  if ( ESP_OK == esp_wifi_scan_get_ap_records( &ctx.scanned_ap_num, ctx.scan_list ) )
+  {
+    _generate_access_points_json();
+    LOG( PRINT_INFO, "SCAN DONE %d %s!!!!!!", ctx.scanned_ap_num, ctx.scan_list[0].ssid );
+  }
   ctx.is_scanned = false;
 }
 
@@ -565,6 +567,7 @@ static void _init_driver( void )
   ctx.esp_netif_sta = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  cfg.nvs_enable = false;
 
   ESP_ERROR_CHECK( esp_wifi_init( &cfg ) );
 
@@ -1055,7 +1058,7 @@ void wifiDrvStart( void )
     /* Waiting to changing state */
     while ( ctx.state <= WIFI_APP_INIT && cnt < 20 )
     {
-      osDelay( 25 );
+      osDelay( 50 );
       cnt++;
     }
     assert( ctx.state > WIFI_APP_INIT );
