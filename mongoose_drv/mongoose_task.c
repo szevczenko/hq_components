@@ -18,7 +18,7 @@ static void _task( void* pvParameters )
 void MongooseTask_Init( void )
 {
   mg_mgr_init( &mgr );
-  xTaskCreate( _task, "mg_poll", 2048, NULL, 5, &mongooseTaskHandle );
+  xTaskCreate( _task, "mg_poll", 4096, NULL, 5, &mongooseTaskHandle );
 }
 
 void MongooseTask_Deinit( void )

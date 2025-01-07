@@ -20,7 +20,7 @@
 #define MODULE_NAME "[HTTP SERV] "
 #define DEBUG_LVL   PRINT_INFO
 
-#if CONFIG_DEBUG_ERROR_SIEWNIK
+#if CONFIG_DEBUG_HTTP_SERVER
 #define LOG( _lvl, ... ) \
   debug_printf( DEBUG_LVL, _lvl, MODULE_NAME __VA_ARGS__ )
 #else
@@ -44,7 +44,8 @@ static const char* method_names[] = {
   [HTTP_SERVER_METHOD_POST] = "POST",
   [HTTP_SERVER_METHOD_DELETE] = "DELETE",
   [HTTP_SERVER_METHOD_PATCH] = "PATCH",
-  [HTTP_SERVER_METHOD_UNHALLOWED] = "UNHALLOWED" };
+  [HTTP_SERVER_METHOD_UNHALLOWED] = "UNHALLOWED",
+};
 
 /* Private functions declaration ---------------------------------------------*/
 
@@ -70,14 +71,15 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
   {
     last_msg_time = xTaskGetTickCount();
     struct mg_http_message* hm = (struct mg_http_message*) ev_data;
-    if ( mg_match( hm->uri, mg_str( "/api/#" ), NULL ) )
+    struct mg_str caps[3];
+    if ( mg_match( hm->uri, mg_str( "/api/#" ), caps ) )
     {
       for ( uint32_t i = 0; i < tokens_size; i++ )
       {
         char buffer[128] = {};
         mg_snprintf( buffer, sizeof( buffer ), "/api/%s#", tokens[i].api_name );
 
-        if ( mg_match( hm->uri, mg_str( buffer ), NULL ) )
+        if ( mg_match( hm->uri, mg_str( buffer ), caps ) )
         {
           HTTPServerMethod_t method = _get_method( &hm->method );
           HTTPServerResponse_t response = tokens[i].cb( &hm->uri, &hm->body, method );
@@ -88,7 +90,7 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
     }
     printf( "Warning: Request not implemented.\n\rURI %.*s\n\r BODY %.*s\n\r", (int) hm->uri.len, hm->uri.buf,
             (int) hm->body.len, hm->body.buf );
-    mg_http_reply( c, 400, "", "FAIL" );
+    mg_http_reply( c, 400, "", "Unknown API" );
   }
 }
 
@@ -96,8 +98,9 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
 
 void HTTPServer_Init( void )
 {
-  if ( nc != NULL )
+  if ( nc == NULL )
   {
+    LOG( PRINT_INFO, "Start listen %s\n", HTTP_URL );
     nc = mg_http_listen( &mgr, HTTP_URL, fn, &mgr );    // Setup listener
   }
 }
