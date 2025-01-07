@@ -50,9 +50,9 @@ static int str2int( struct mg_str* str )
   int ret = 0;
   for ( i = 0; i < str->len; i++ )
   {
-    if ( isdigit( (unsigned char) str->ptr[i] ) )
+    if ( isdigit( (unsigned char) str->buf[i] ) )
     {
-      ret = ret * 10 + ( str->ptr[i] - '0' );
+      ret = ret * 10 + ( str->buf[i] - '0' );
     }
     else
     {
@@ -102,7 +102,7 @@ static HTTPServerResponse_t _parameters_parse_cb( struct mg_str* uri, struct mg_
       }
     }
   }
-  LOG( PRINT_INFO, "%s %d Parameter not exist %*s", __func__, uri->len, uri->len, uri->ptr );
+  LOG( PRINT_INFO, "%s %d Parameter not exist %*s", __func__, uri->len, uri->len, uri->buf );
   sprintf( response_buffer, "Parameter not exist" );
   response.code = 400;
   return response;
@@ -130,7 +130,7 @@ static HTTPServerResponse_t _parameters_str_parse_cb( struct mg_str* uri, struct
           assert( data );
           assert( data->len < DEV_CONFIG_MAX_STRING_LEN );
           char str[DEV_CONFIG_MAX_STRING_LEN] = {};
-          strncpy( str, data->ptr, data->len );
+          strncpy( str, data->buf, data->len );
           if ( parameters_setString( i, str ) )
           {
             sprintf( response_buffer, "OK" );
@@ -150,8 +150,8 @@ static HTTPServerResponse_t _parameters_str_parse_cb( struct mg_str* uri, struct
       }
     }
   }
-  LOG( PRINT_INFO, "%s %d Parameter not exist %*s", __func__, uri->len, uri->len, uri->ptr );
-  sprintf( response_buffer, "Parameter not exist %.*s", uri->len, uri->ptr );
+  LOG( PRINT_INFO, "%s %d Parameter not exist %*s", __func__, uri->len, uri->len, uri->buf );
+  sprintf( response_buffer, "Parameter not exist %.*s", uri->len, uri->buf );
   response.code = 400;
   return response;
 }

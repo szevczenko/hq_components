@@ -98,9 +98,9 @@ static int str2int( struct mg_str* str )
   int ret = 0;
   for ( i = 0; i < str->len; i++ )
   {
-    if ( isdigit( (unsigned char) str->ptr[i] ) )
+    if ( isdigit( (unsigned char) str->buf[i] ) )
     {
-      ret = ret * 10 + ( str->ptr[i] - '0' );
+      ret = ret * 10 + ( str->buf[i] - '0' );
     }
     else
     {
@@ -194,7 +194,7 @@ static bool _post_message( struct mg_connection* c, http_request_t* request )
              "\r\n",
              request->method == HTTP_SERVER_METHOD_POST ? "POST" : "GET",
              mg_url_uri( request_url ), (int) host.len,
-             host.ptr, content_length );
+             host.buf, content_length );
   return mg_send( c, s_post_data, content_length );
 }
 
@@ -239,7 +239,7 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
       else if ( request->type == PARAM_TYPE_STRING )
       {
         assert( hm->body.len < sizeof( request->data.str.value ) );
-        memcpy( request->data.str.value, hm->body.ptr, hm->body.len );
+        memcpy( request->data.str.value, hm->body.buf, hm->body.len );
         assert( parameters_setString( request->data.str.parameter, request->data.str.value ) );
       }
     }
@@ -247,7 +247,7 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
     _set_response( request, code );
     if ( code != 200 )
     {
-      LOG( PRINT_ERROR, "code %d, %.*s", code, hm->body.len, hm->body.ptr );
+      LOG( PRINT_ERROR, "code %d, %.*s", code, hm->body.len, hm->body.buf );
     }
     c->is_draining = 1;    // Tell mongoose to close this connection
     done = true;

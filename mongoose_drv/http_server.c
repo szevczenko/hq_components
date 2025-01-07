@@ -34,7 +34,7 @@
 #define ARRAY_SIZE( _array ) sizeof( _array ) / sizeof( _array[0] )
 #define CONNECTION_TIMEOUT   5000
 
-static mg_connection* nc;
+static struct mg_connection* nc;
 static HTTPServerApiToken_t tokens[16];
 static TickType_t last_msg_time;
 static uint32_t tokens_size;
@@ -56,7 +56,7 @@ static HTTPServerMethod_t _get_method( struct mg_str* name )
 {
   for ( HTTPServerMethod_t i = 0; i < HTTP_SERVER_METHOD_LAST; i++ )
   {
-    if ( mg_vcasecmp( name, method_names[i] ) == 0 )
+    if ( mg_strcasecmp( *name, mg_str( method_names[i] ) ) == 0 )
     {
       return i;
     }
@@ -70,14 +70,14 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
   {
     last_msg_time = xTaskGetTickCount();
     struct mg_http_message* hm = (struct mg_http_message*) ev_data;
-    if ( mg_http_match_uri( hm, "/api/#" ) )
+    if ( mg_match( hm->uri, mg_str( "/api/#" ), NULL ) )
     {
       for ( uint32_t i = 0; i < tokens_size; i++ )
       {
         char buffer[128] = {};
         mg_snprintf( buffer, sizeof( buffer ), "/api/%s#", tokens[i].api_name );
 
-        if ( mg_http_match_uri( hm, buffer ) )
+        if ( mg_match( hm->uri, mg_str( buffer ), NULL ) )
         {
           HTTPServerMethod_t method = _get_method( &hm->method );
           HTTPServerResponse_t response = tokens[i].cb( &hm->uri, &hm->body, method );
@@ -86,8 +86,8 @@ static void fn( struct mg_connection* c, int ev, void* ev_data )
         }
       }
     }
-    printf( "Warning: Request not implemented.\n\rURI %.*s\n\r BODY %.*s\n\r", (int) hm->uri.len, hm->uri.ptr,
-            (int) hm->body.len, hm->body.ptr );
+    printf( "Warning: Request not implemented.\n\rURI %.*s\n\r BODY %.*s\n\r", (int) hm->uri.len, hm->uri.buf,
+            (int) hm->body.len, hm->body.buf );
     mg_http_reply( c, 400, "", "FAIL" );
   }
 }
