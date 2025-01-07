@@ -118,11 +118,48 @@ void DevConfig_Printf( enum config_print_lvl module_lvl, enum config_print_lvl m
   }
 }
 
+static esp_err_t _nvs_part_init( const char* name )
+{
+#if CONFIG_NVS_ENCRYPTION
+  esp_err_t ret = ESP_FAIL;
+  const esp_partition_t* key_part = esp_partition_find_first(
+    ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS_KEYS, NULL );
+  if ( key_part == NULL )
+  {
+    printf( "ERROR: CONFIG_NVS_ENCRYPTION is enabled, but no partition with subtype nvs_keys found in the partition table." );
+    return ret;
+  }
+
+  nvs_sec_cfg_t cfg = {};
+  ret = nvs_flash_read_security_cfg( key_part, &cfg );
+  if ( ret != ESP_OK )
+  {
+    /* We shall not generate keys here as that must have been done in default NVS partition initialization case */
+    printf( "ERROR: Failed to read NVS security cfg: [0x%02X] (%s)", ret, esp_err_to_name( ret ) );
+    return ret;
+  }
+
+  ret = nvs_flash_secure_init_partition( name, &cfg );
+  if ( ret == ESP_OK )
+  {
+    printf( "NVS partition \"%s\" is encrypted.", name );
+  }
+  else
+  {
+    printf( "[CRITICAL ERROR], cannot init %s partition: %s", name, esp_err_to_name( ret ) );
+  }
+  return ret;
+#else
+  return nvs_flash_init_partition( name );
+#endif
+}
+
 void DevConfig_Init( void )
 {
   mutexSemaphore = xSemaphoreCreateBinary();
   xSemaphoreGive( mutexSemaphore );
-  nvs_flash_init_partition( PARTITION_NAME );
+  nvs_flash_init();
+  _nvs_part_init( PARTITION_NAME );
   if ( false == _read_data() )
   {
     printf( "[DEVICE CONFIG] Critical error: cannot read device config\n\r" );
