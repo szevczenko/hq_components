@@ -19,7 +19,7 @@
 #define DEV_CONFIG_MAX_STRING_LEN 48
 
 #ifndef CONFIG_NVS_ENCRYPTION
-#define CONFIG_NVS_ENCRYPTION 1
+#define CONFIG_NVS_ENCRYPTION 0
 #endif
 
 /* Public types ----------------------------------------------------------*/

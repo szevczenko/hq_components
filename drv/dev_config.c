@@ -88,7 +88,7 @@ static bool _save_data( void )
   if ( err == ESP_OK )
   {
     err = nvs_commit( nvs );
-    if ( err == ESP_OK )
+    if ( err != ESP_OK )
     {
       printf( "Error commit " STORAGE_NAMESPACE " %d\n\r", err );
     }
