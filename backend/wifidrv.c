@@ -20,7 +20,7 @@
 #include "sleep_e.h"
 
 #define MODULE_NAME "[WiFi] "
-#define DEBUG_LVL   PRINT_ERROR
+#define DEBUG_LVL   PRINT_DEBUG
 
 #if CONFIG_DEBUG_WIFI
 #define LOG( _lvl, ... ) \
@@ -650,8 +650,6 @@ static void _wifi_event_task( void* pv )
 
 bool wifiDrvStartScan( void )
 {
-  wifi_scan_config_t scan_config = { 0 };
-
   if ( ( ctx.state == WIFI_APP_IDLE ) || ( ctx.state == WIFI_APP_READY ) )
   {
     if ( !ctx.is_started )
@@ -659,8 +657,13 @@ bool wifiDrvStartScan( void )
       _start_sta_mode();
       osDelay( 100 );
     }
-
-    return esp_wifi_scan_start( &scan_config, true ) == ESP_OK;
+    esp_err_t res = esp_wifi_scan_start( NULL, true );
+    if ( res != ESP_OK )
+    {
+      LOG( PRINT_ERROR, "Error start scan %d", res );
+      return false;
+    }
+    return res == ESP_OK;
   }
 
   return false;
@@ -670,8 +673,9 @@ void wifiDrvGetScanResult( uint16_t* ap_count )
 {
   uint16_t number = DEFAULT_SCAN_LIST_SIZE;
 
-  ESP_ERROR_CHECK( esp_wifi_scan_get_ap_records( &number, ctx.scan_list ) );
   ESP_ERROR_CHECK( esp_wifi_scan_get_ap_num( ap_count ) );
+  ESP_ERROR_CHECK( esp_wifi_scan_get_ap_records( &number, ctx.scan_list ) );
+  LOG( PRINT_DEBUG, "AP count %d", *ap_count );
   for ( uint32_t i = 0; i < *ap_count; i++ )
   {
     LOG( PRINT_DEBUG, "AP: %s CH %d CH2 %d RSSI %d", ctx.scan_list[i].ssid, ctx.scan_list[i].primary,
