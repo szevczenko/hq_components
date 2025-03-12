@@ -694,11 +694,11 @@ static void menu_task( void* arg )
     {
       if ( menu != NULL )
       {
-        LOG( PRINT_INFO, "state: %s, menu %d", state_name[ctx.state], menu->name_dict );
+        LOG( PRINT_DEBUG, "state: %s, menu %d", state_name[ctx.state], menu->name_dict );
       }
       else
       {
-        LOG( PRINT_INFO, "state %s, menu is NULL", state_name[ctx.state] );
+        LOG( PRINT_ERROR, "state %s, menu is NULL", state_name[ctx.state] );
       }
 
       prev_state = ctx.state;

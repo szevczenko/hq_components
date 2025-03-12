@@ -160,6 +160,7 @@ xkc_error_code_t xkc_read_distance( uint16_t* distance )
   return result;
 }
 
+#if defined( TEST_XKC_KL200 )
 static void measurement_task( void* pvParameters )
 {
   xkc_error_code_t res = xkc_configure_upload_mode( UPLOAD_MODE_MANUAL );
@@ -181,9 +182,12 @@ static void measurement_task( void* pvParameters )
     vTaskDelay( pdMS_TO_TICKS( 1000 ) );    // Delay for 1 second
   }
 }
+#endif
 
 void xkc_init( int uart_num, uint32_t baud_rate, uint64_t tx_pin, uint64_t rx_pin )
 {
   init_uart( uart_num, baud_rate, tx_pin, rx_pin );
+#if defined( TEST_XKC_KL200 )
   xTaskCreate( measurement_task, "measurement_task", 2048, NULL, 5, NULL );
+#endif
 }
