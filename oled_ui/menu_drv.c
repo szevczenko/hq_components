@@ -15,7 +15,7 @@
 #include "wifidrv.h"
 
 #define MODULE_NAME "[MENU Drv] "
-#define DEBUG_LVL   PRINT_INFO
+#define DEBUG_LVL   PRINT_WARNING
 
 #if CONFIG_DEBUG_MENU_BACKEND
 #define LOG( _lvl, ... ) \
@@ -795,6 +795,10 @@ void menuPrintfInfo( const char* format, ... )
 
 void menuDrvEnterEmergencyDisable( void )
 {
+  if ( ctx.state == MENU_STATE_EMERGENCY_DISABLE )
+  {
+    return;
+  }
   ctx.last_state = ctx.state;
   ctx.state = MENU_STATE_EMERGENCY_DISABLE;
   ctx.emergency_led_status = true;
