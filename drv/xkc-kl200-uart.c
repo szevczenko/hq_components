@@ -29,12 +29,6 @@ static void init_uart( int uart_num, uint32_t baud_rate, uint64_t tx_pin, uint64
 
 static void send_command( const uint8_t* command, size_t length )
 {
-  printf( "Send %d: ", length );
-  for ( int i = 0; i < length; i++ )
-  {
-    printf( "%02X ", command[i] );
-  }
-  printf( "\n" );
   uart_write_bytes( uart_number, (const char*) command, length );
 }
 
@@ -49,12 +43,6 @@ static xkc_error_code_t read_response( uint8_t* response, size_t length, uint8_t
     }
     else
     {
-      printf( "Invalid response %d %x: ", len, response[len - 2] );
-      for ( int i = 0; i < len; i++ )
-      {
-        printf( "%02X ", response[i] );
-      }
-      printf( "\n" );
       return XKC_CODE_FAIL;
     }
   }
