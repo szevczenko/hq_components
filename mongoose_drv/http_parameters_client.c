@@ -73,7 +73,7 @@ typedef struct
   bool wait_response;
 } http_request_t;
 
-static char request_url[256];
+static char request_url[384];
 static QueueHandle_t request_queue = NULL;
 static SemaphoreHandle_t mutex;
 static struct mg_mgr mgr;    // Event manager
