@@ -12,7 +12,6 @@
 #include <string.h>
 
 #include "app_config.h"
-#include "json_parser.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 

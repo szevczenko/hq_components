@@ -14,8 +14,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "app_events.h"
-
 /* Public macros -------------------------------------------------------------*/
 
 #define HAWKBIT_CONFIG_STR_SIZE 64

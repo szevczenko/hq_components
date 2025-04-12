@@ -13,19 +13,12 @@
 
 #include <stdbool.h>
 
-#include "app_events.h"
-
 /* Public functions ----------------------------------------------------------*/
 
 /**
  * @brief   Init hawkbit task.
  */
 void HawkbitProcess_Init( void );
-
-/**
- * @brief   Sends event to hawkbit task.
- */
-void HawkbitProcess_PostMsg( app_event_t* event );
 
 /**
  * @brief   Deinit hawkbit task.
