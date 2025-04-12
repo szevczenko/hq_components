@@ -34,15 +34,6 @@
 static void _set_alert( void* user_data, bool value );
 static void _set_reset( void* user_data, bool value );
 
-/* Private variables ---------------------------------------------------------*/
-
-// static json_parse_token_t output_tokens[] = {
-//   {.bool_cb = _set_alert,
-//    .name = "alert"},
-//   { .bool_cb = _set_reset,
-//    .name = "reset"},
-// };
-
 /* Private functions ---------------------------------------------------------*/
 
 static void IRAM_ATTR gpio_isr_handler( void* arg )
