@@ -18,8 +18,9 @@ static void _task( void* pvParameters )
 void MongooseTask_Init( void )
 {
   mg_mgr_init( &mgr );
+  mgr.dns4.url = "udp://192.168.1.2:53";
   mg_log_set( MG_LL_DEBUG );    // Set log level
-  xTaskCreate( _task, "mg_poll", 4096, NULL, 5, &mongooseTaskHandle );
+  xTaskCreate( _task, "mg_poll", 4096 * 3, NULL, 5, &mongooseTaskHandle );
 }
 
 void MongooseTask_Deinit( void )

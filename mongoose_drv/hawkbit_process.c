@@ -26,11 +26,16 @@
 #include "ota_drv.h"
 
 /* Private macros ------------------------------------------------------------*/
-#define MODULE_NAME       "[HAWKBIT_P] "
-#define DEBUG_LVL         PRINT_DEBUG
-#define MAX_CHUNK_SIZE    ( 8192 * 2 )    // 16 KB
-#define MAX_RESPONSE_SIZE 2048
-#define POLLING_INTERVAL  ( 5 * 60 * 1000 )    // 5 minutes in milliseconds
+#define MODULE_NAME             "[HAWKBIT_P] "
+#define DEBUG_LVL               PRINT_INFO
+#define MAX_CHUNK_SIZE          ( 8192 * 2 )    // 16 KB
+#define MAX_RESPONSE_SIZE       2048
+#define POLLING_INTERVAL        ( 5 * 60 * 1000 )    // 5 minutes in milliseconds
+#define HTTP_REQUEST_TIMEOUT_MS 10000
+#define DOWNLOAD_TIMEOUT_MS     300000
+#define DEFAULT_SUCCESS_MSG     "The update was successfully installed."
+#define DEFAULT_FAILURE_MSG     "The update failed."
+#define DEFAULT_CANCEL_MSG      "The update was canceled by the user."
 
 #if CONFIG_DEBUG_HTTP_HAWKBIT
 #define LOG( _lvl, ... ) \
@@ -98,6 +103,9 @@ static struct mg_connection* client_conn = NULL;
 static SemaphoreHandle_t http_semaphore;
 static hawkbit_data_t hawkbit_data;
 
+extern const unsigned char ca_cert_start[] asm( "_binary_ca_cert_pem_start" );
+extern const unsigned char ca_cert_end[] asm( "_binary_ca_cert_pem_end" );
+
 /* Function prototypes ------------------------------------------------------*/
 static void _send_event( hawkbit_event_t event );
 static bool _find_action_id( const char* str, uint32_t* id );
@@ -112,6 +120,65 @@ static void _handle_post_result( void );
 static void _handle_cancel_action( void );
 static void _init_update_status( void );
 static void _process_task( void* parameters );
+static void _get_host_header( const char* url, char* host_header_buf, size_t buf_size );
+
+/* HTTP Connection Helpers ---------------------------------------------------*/
+static void _setup_tls_connection( struct mg_connection* c, const char* url )
+{
+  if ( mg_url_is_ssl( url ) )
+  {
+    struct mg_tls_opts opts_ca = {
+      .ca = mg_str( (char*) ca_cert_start ),
+      .name = mg_url_host( url ),
+    };
+    mg_tls_init( c, &opts_ca );
+  }
+}
+
+static char* _get_auth_token( void )
+{
+  static char token[64];
+  HAWKBITConfig_GetString( token, HAWKBIT_CONFIG_VALUE_TOKEN, sizeof( token ) );
+  return token;
+}
+
+static void _prepare_request_headers( char* request_header, size_t header_size,
+                                      const char* url, const char* method,
+                                      const char* accept, const char* data,
+                                      const char* range )
+{
+  char host_header[128];
+  const char* path = mg_url_uri( url );
+  if ( !path || *path == '\0' )
+    path = "/";
+
+  _get_host_header( url, host_header, sizeof( host_header ) );
+  char* token = _get_auth_token();
+
+  if ( strcmp( method, "GET" ) == 0 || strcmp( method, "HEAD" ) == 0 )
+  {
+    snprintf( request_header, header_size,
+              "%s %s HTTP/1.1\r\n"
+              "%s"
+              "Authorization: GatewayToken %s\r\n"
+              "%s"
+              "Accept: %s\r\n\r\n",
+              method, path, host_header, token,
+              range ? range : "",
+              accept ? accept : "application/json" );
+  }
+  else if ( strcmp( method, "POST" ) == 0 || strcmp( method, "PUT" ) == 0 )
+  {
+    snprintf( request_header, header_size,
+              "%s %s HTTP/1.1\r\n"
+              "%s"
+              "Authorization: GatewayToken %s\r\n"
+              "Content-Type: application/json\r\n"
+              "Content-Length: %d\r\n\r\n",
+              method, path, host_header, token,
+              data ? strlen( data ) : 0 );
+  }
+}
 
 /* Event handling ------------------------------------------------------------*/
 static void _send_event( hawkbit_event_t event )
@@ -144,13 +211,37 @@ static void _timer_polling_callback( TimerHandle_t timer )
   _send_event( HAWKBIT_POLL_SERVER );
 }
 
+/* Function to generate host header string */
+static void _get_host_header( const char* url, char* host_header_buf, size_t buf_size )
+{
+  struct mg_str host = mg_url_host( url );
+  int port = mg_url_port( url );
+
+  if ( mg_url_is_ssl( url ) )
+  {
+    // For SSL connections (typically port 443), don't include the port
+    snprintf( host_header_buf, buf_size, "Host: %.*s\r\n", (int) host.len, host.buf );
+  }
+  else
+  {
+    // For non-SSL connections, include the port
+    snprintf( host_header_buf, buf_size, "Host: %.*s:%d\r\n", (int) host.len, host.buf, port );
+  }
+}
+
 /* HTTP request handling -----------------------------------------------------*/
 static void _http_event_handler( struct mg_connection* c, int ev, void* ev_data )
 {
   struct mg_http_message* hm = (struct mg_http_message*) ev_data;
+  const char* url = (const char*) c->fn_data;
   LOG( PRINT_DEBUG, "Event: %d", ev );
+
   switch ( ev )
   {
+    case MG_EV_OPEN:
+      _setup_tls_connection( c, url );
+      break;
+
     case MG_EV_HTTP_MSG:
       response_code = mg_http_status( hm );
       LOG( PRINT_DEBUG, "HTTP response: %d %.*s", response_code, (int) hm->body.len, hm->body.buf );
@@ -167,7 +258,7 @@ static void _http_event_handler( struct mg_connection* c, int ev, void* ev_data 
       break;
 
     case MG_EV_ERROR:
-      LOG( PRINT_ERROR, "HTTP request failed" );
+      LOG( PRINT_ERROR, "HTTP request failed: %s", (char*) ev_data );
       c->is_closing = 1;
       response_code = -1;
       xSemaphoreGive( http_semaphore );
@@ -180,50 +271,30 @@ static void _http_event_handler( struct mg_connection* c, int ev, void* ev_data 
 
 static bool _http_request( const char* url, const char* method, const char* data, const char* accept )
 {
-  client_conn = mg_http_connect( &mgr, url, _http_event_handler, NULL );
+  client_conn = mg_http_connect( &mgr, url, _http_event_handler, (void*) url );
   if ( client_conn == NULL )
   {
     LOG( PRINT_ERROR, "Failed to initialize HTTP client" );
     return false;
   }
 
-  char token[64] = {};
-  struct mg_str host = mg_url_host( url );
-  int port = mg_url_port( url );
-  HAWKBITConfig_GetString( token, HAWKBIT_CONFIG_VALUE_TOKEN, sizeof( token ) );
-
   char request_header[512] = {};
+  _prepare_request_headers( request_header, sizeof( request_header ),
+                            url, method, accept, data, NULL );
+
+  LOG( PRINT_DEBUG, "HTTP request: %s", request_header );
 
   if ( strcmp( method, "GET" ) == 0 )
   {
-    snprintf( request_header, sizeof( request_header ),
-              "GET %s HTTP/1.1\r\n"
-              "Host: %.*s:%d\r\n"
-              "Authorization: GatewayToken %s\r\n"
-              "Accept: %s\r\n\r\n",
-              url, host.len, host.buf, port, token,
-              accept ? accept : "application/json" );
-
-    LOG( PRINT_DEBUG, "HTTP request: %s", request_header );
     mg_printf( client_conn, "%s", request_header );
   }
   else if ( strcmp( method, "POST" ) == 0 || strcmp( method, "PUT" ) == 0 )
   {
-    snprintf( request_header, sizeof( request_header ),
-              "%s %s HTTP/1.1\r\n"
-              "Host: %.*s:%d\r\n"
-              "Authorization: GatewayToken %s\r\n"
-              "Content-Type: application/json\r\n"
-              "Content-Length: %d\r\n\r\n",
-              method, url, host.len, host.buf, port, token,
-              data ? strlen( data ) : 0 );
-
-    LOG( PRINT_DEBUG, "HTTP request: %s", request_header );
     mg_printf( client_conn, "%s%s", request_header, data ? data : "" );
   }
 
   // Wait for the response
-  if ( xSemaphoreTake( http_semaphore, pdMS_TO_TICKS( 10000 ) ) != pdTRUE )
+  if ( xSemaphoreTake( http_semaphore, pdMS_TO_TICKS( HTTP_REQUEST_TIMEOUT_MS ) ) != pdTRUE )
   {
     LOG( PRINT_ERROR, "HTTP request timeout" );
     return false;
@@ -246,22 +317,9 @@ static const char* _get_poll_address( void )
   return ctx.url;
 }
 
-static bool _post_hawkbit_result( const char* result, const char* execution, const char* details, bool is_cancel_action, int cnt )
+static void _format_feedback_url( bool is_cancel_action )
 {
-  char post_data[512] = {};
   const char* device_id = DevConfig_GetSerialNumber();
-
-  // Format the JSON payload
-  snprintf( post_data, sizeof( post_data ) - 1,
-            "{\"status\":{"
-            "\"execution\":\"%s\","
-            "\"result\":{\"finished\":\"%s\",\"progress\":{\"cnt\":%d,\"of\":5}},"
-            "\"code\":200,\"details\":[\"%s\"]},"
-            "\"timestamp\":%lld}",
-            execution, result, cnt, details, (long long) ( time( NULL ) * 1000 ) );
-
-  // Log the JSON payload for debugging
-  LOG( PRINT_DEBUG, "POST JSON Payload: %s", post_data );
 
   if ( is_cancel_action )
   {
@@ -275,6 +333,26 @@ static bool _post_hawkbit_result( const char* result, const char* execution, con
               "%s/deploymentBase/%" PRIu32 "/feedback",
               ctx.url, ctx.action_id );
   }
+}
+
+static bool _post_hawkbit_result( const char* result, const char* execution, const char* details, bool is_cancel_action, int cnt )
+{
+  char post_data[512] = {};
+
+  // Format the JSON payload
+  snprintf( post_data, sizeof( post_data ) - 1,
+            "{\"status\":{"
+            "\"execution\":\"%s\","
+            "\"result\":{\"finished\":\"%s\",\"progress\":{\"cnt\":%d,\"of\":5}},"
+            "\"code\":200,\"details\":[\"%s\"]},"
+            "\"timestamp\":%lld}",
+            execution, result, cnt, details, (long long) ( time( NULL ) * 1000 ) );
+
+  // Log the JSON payload for debugging
+  LOG( PRINT_DEBUG, "POST JSON Payload: %s", post_data );
+
+  // Format the feedback URL
+  _format_feedback_url( is_cancel_action );
 
   // Send the HTTP POST request
   return _http_request( url_deployment_feedback, "POST", post_data, "application/json" );
@@ -289,6 +367,10 @@ static void _head_ev_handler( struct mg_connection* c, int ev, void* ev_data )
 
   switch ( ev )
   {
+    case MG_EV_OPEN:
+      _setup_tls_connection( c, ctx->url );
+      break;
+
     case MG_EV_HTTP_HDRS:
       // Log received headers for debugging
       for ( size_t i = 0; i < sizeof( hm->headers ) / sizeof( hm->headers[0] ); i++ )
@@ -335,10 +417,16 @@ static void _download_ev_handler( struct mg_connection* c, int ev, void* ev_data
   struct mg_http_message* hm = (struct mg_http_message*) ev_data;
   int status_code = 0;
   LOG( PRINT_DEBUG, "Download event: %d", ev );
+
   switch ( ev )
   {
+    case MG_EV_OPEN:
+      _setup_tls_connection( c, ctx->url );
+      break;
+
     case MG_EV_HTTP_MSG:
       status_code = mg_http_status( hm );
+      LOG( PRINT_DEBUG, "Download response: %d %.*s", status_code, (int) hm->body.len, hm->body.buf );
       if ( status_code == 200 || status_code == 206 )
       {
         size_t chunk_size = MIN( hm->body.len, MAX_CHUNK_SIZE );
@@ -375,10 +463,15 @@ static void _download_ev_handler( struct mg_connection* c, int ev, void* ev_data
         else
         {
           char range_header[64];
-          snprintf( range_header, sizeof( range_header ), "Range: bytes=%zu-%zu",
+          char request_header[512];
+
+          snprintf( range_header, sizeof( range_header ), "Range: bytes=%zu-%zu\r\n",
                     ctx->total_written, ctx->total_written + MAX_CHUNK_SIZE - 1 );
-          mg_printf( c, "GET %s HTTP/1.1\r\nHost: %.*s:%d\r\n%s\r\n\r\n",
-                     ctx->url, mg_url_host( ctx->url ).len, mg_url_host( ctx->url ).buf, mg_url_port( ctx->url ), range_header );
+
+          _prepare_request_headers( request_header, sizeof( request_header ),
+                                    ctx->url, "GET", "*/*", NULL, range_header );
+
+          mg_printf( c, "%s", request_header );
           LOG( PRINT_DEBUG, "Requesting next chunk with range: %s", range_header );
         }
       }
@@ -404,18 +497,14 @@ static void _download_ev_handler( struct mg_connection* c, int ev, void* ev_data
   }
 }
 
-static bool _download_firmware( const char* url, const char* ca )
+static bool _get_file_size( const char* url, size_t* file_size )
 {
   ota_download_ctx_t download_ctx = {
     .url = url,
-    .ca = ca,
+    .ca = NULL,
     .total_size = 0,
     .total_written = 0,
     .semaphore = xSemaphoreCreateBinary() };
-
-  char request_header[512] = {};
-  struct mg_str host = mg_url_host( url );
-  uint32_t port = mg_url_port( url );
 
   if ( download_ctx.semaphore == NULL )
   {
@@ -430,29 +519,48 @@ static bool _download_firmware( const char* url, const char* ca )
     vSemaphoreDelete( download_ctx.semaphore );
     return false;
   }
-  snprintf( request_header, sizeof( request_header ),
-            "HEAD %s HTTP/1.1\r\nHost: %.*s:%ld\r\nAccept: */*\r\n\r\n",
-            url, host.len, host.buf, port );
+
+  char request_header[512];
+  _prepare_request_headers( request_header, sizeof( request_header ),
+                            url, "GET", "*/*", NULL, NULL );
 
   LOG( PRINT_DEBUG, ">%s", request_header );
   mg_printf( c, "%s", request_header );
 
-  if ( xSemaphoreTake( download_ctx.semaphore, pdMS_TO_TICKS( 10000 ) ) != pdTRUE )
+  bool success = ( xSemaphoreTake( download_ctx.semaphore, pdMS_TO_TICKS( HTTP_REQUEST_TIMEOUT_MS ) ) == pdTRUE && download_ctx.total_size > 0 );
+
+  if ( success )
   {
-    LOG( PRINT_ERROR, "HEAD request timeout" );
-    vSemaphoreDelete( download_ctx.semaphore );
-    download_ctx.semaphore = NULL;
+    *file_size = download_ctx.total_size;
+  }
+
+  vSemaphoreDelete( download_ctx.semaphore );
+  return success;
+}
+
+static bool _download_firmware( const char* url, const char* ca )
+{
+  size_t file_size = 0;
+  if ( !_get_file_size( url, &file_size ) || file_size == 0 )
+  {
+    LOG( PRINT_ERROR, "Failed to determine file size or file is empty" );
     return false;
   }
 
-  if ( download_ctx.total_size == 0 )
+  ota_download_ctx_t download_ctx = {
+    .url = url,
+    .ca = ca,
+    .total_size = file_size,
+    .total_written = 0,
+    .semaphore = xSemaphoreCreateBinary() };
+
+  if ( download_ctx.semaphore == NULL )
   {
-    LOG( PRINT_ERROR, "Invalid content length" );
-    vSemaphoreDelete( download_ctx.semaphore );
+    LOG( PRINT_ERROR, "Failed to create semaphore" );
     return false;
   }
 
-  c = mg_http_connect( &mgr, url, _download_ev_handler, &download_ctx );
+  struct mg_connection* c = mg_http_connect( &mgr, url, _download_ev_handler, &download_ctx );
   if ( c == NULL )
   {
     LOG( PRINT_ERROR, "Failed to create connection for download" );
@@ -461,51 +569,26 @@ static bool _download_firmware( const char* url, const char* ca )
   }
 
   char range_header[64];
-  snprintf( range_header, sizeof( range_header ), "Range: bytes=0-%zu", MIN( download_ctx.total_size, MAX_CHUNK_SIZE ) - 1 );
-  sprintf( request_header,
-           "GET %s HTTP/1.1\r\n"
-           "Host: %.*s:%lu\r\n"
-           "Accept: */*\r\n"
-           "%s\r\n\r\n",
-           url, host.len, host.buf, port, range_header );
+  char request_header[512];
+
+  snprintf( range_header, sizeof( range_header ), "Range: bytes=0-%zu\r\n",
+            MIN( download_ctx.total_size, MAX_CHUNK_SIZE ) - 1 );
+
+  _prepare_request_headers( request_header, sizeof( request_header ),
+                            url, "GET", "*/*", NULL, range_header );
+
   LOG( PRINT_DEBUG, ">%s", request_header );
   mg_printf( c, "%s", request_header );
 
-  if ( xSemaphoreTake( download_ctx.semaphore, pdMS_TO_TICKS( 300000 ) ) != pdTRUE )
-  {
-    LOG( PRINT_ERROR, "Download timeout" );
-    vSemaphoreDelete( download_ctx.semaphore );
-    return false;
-  }
+  bool success = ( xSemaphoreTake( download_ctx.semaphore, pdMS_TO_TICKS( DOWNLOAD_TIMEOUT_MS ) ) == pdTRUE && download_ctx.total_written == download_ctx.total_size );
 
   vSemaphoreDelete( download_ctx.semaphore );
-  return download_ctx.total_written == download_ctx.total_size;
+  return success;
 }
 
 /* Event handlers ------------------------------------------------------------*/
-static void _handle_poll_server( void )
+static void _process_deployment_urls( void )
 {
-  // Restart the polling timer
-  xTimerStart( polling_timer, 0 );
-
-  // Get server poll address and send request
-  const char* url = _get_poll_address();
-  if ( !_http_request( url, "GET", NULL, "application/hal+json" ) )
-  {
-    LOG( PRINT_ERROR, "HTTP GET request failed" );
-    return;
-  }
-
-  // Parse URLs from response
-  if ( !HAWKBITParser_ParseUrl( response_buffer,
-                                url_config_data, sizeof( url_config_data ),
-                                url_deployment_base, sizeof( url_deployment_base ),
-                                url_cancel_action, sizeof( url_cancel_action ) ) )
-  {
-    LOG( PRINT_ERROR, "Failed to parse URLs from response" );
-    return;
-  }
-
   // Handle config data URL if present
   if ( strlen( url_config_data ) > 0 )
   {
@@ -534,12 +617,12 @@ static void _handle_poll_server( void )
 
         case HAWKBIT_UPDATE_SUCCESS:
           _post_hawkbit_result( "success", "closed",
-                                "The update was successfully installed.", false, 5 );
+                                DEFAULT_SUCCESS_MSG, false, 5 );
           break;
 
         case HAWKBIT_STATUS_FAIL:
           _post_hawkbit_result( "failure", "closed",
-                                "The update failed during installation.", false, 5 );
+                                DEFAULT_FAILURE_MSG, false, 5 );
           break;
 
         default:
@@ -552,6 +635,32 @@ static void _handle_poll_server( void )
       _send_event( HAWKBIT_DOWNLOAD_IMAGE );
     }
   }
+}
+
+static void _handle_poll_server( void )
+{
+  // Restart the polling timer
+  xTimerStart( polling_timer, 0 );
+
+  // Get server poll address and send request
+  const char* url = _get_poll_address();
+  if ( !_http_request( url, "GET", NULL, "application/hal+json" ) )
+  {
+    LOG( PRINT_ERROR, "HTTP GET request failed" );
+    return;
+  }
+
+  // Parse URLs from response
+  if ( !HAWKBITParser_ParseUrl( response_buffer,
+                                url_config_data, sizeof( url_config_data ),
+                                url_deployment_base, sizeof( url_deployment_base ),
+                                url_cancel_action, sizeof( url_cancel_action ) ) )
+  {
+    LOG( PRINT_ERROR, "Failed to parse URLs from response" );
+    return;
+  }
+
+  _process_deployment_urls();
 
   // Handle cancel action URL if present
   if ( strlen( url_cancel_action ) > 0 )
@@ -564,7 +673,7 @@ static void _handle_poll_server( void )
 static void _handle_post_config( void )
 {
   LOG( PRINT_INFO, "Posting config data: %s", url_config_data );
-
+  /* ToDo: fix this hardcode message */
   const char* post_data = "{\"mode\":\"merge\","
                           "\"data\":{\"VIN\":\"JH4TB2H26CC000001\",\"hwRevision\":\"1\"},"
                           "\"status\":{\"result\":{\"finished\":\"success\"},\"execution\":\"closed\",\"details\":[]}}";
@@ -577,6 +686,39 @@ static void _handle_post_config( void )
   {
     LOG( PRINT_INFO, "Config data posted successfully" );
   }
+}
+
+static bool _process_artifact( hawkbit_artifacts_t* artifact )
+{
+  // Only process main.bin files
+  if ( strcmp( artifact->filename, "main.bin" ) != 0 )
+  {
+    LOG( PRINT_INFO, "Skipping non-main.bin artifact: %s", artifact->filename );
+    return true;
+  }
+
+  // Post download start feedback
+  LOG( PRINT_DEBUG, "Starting download: %s", artifact->download_http );
+  _post_hawkbit_result( "none", "download", "download", false, 1 );
+
+  // Perform download
+  bool download_success = _download_firmware( artifact->download_http, NULL );
+
+  if ( !download_success )
+  {
+    LOG( PRINT_ERROR, "Download failed" );
+    _post_hawkbit_result( "none", "download",
+                          "Failed download. Try again after polling", false, 1 );
+    return false;
+  }
+
+  // Post download success feedback
+  LOG( PRINT_DEBUG, "Download successful" );
+  _post_hawkbit_result( "none", "downloaded", "downloaded", false, 2 );
+  _post_hawkbit_result( "none", "proceeding", "install", false, 3 );
+  _post_hawkbit_result( "none", "proceeding", "reboot", false, 4 );
+
+  return true;
 }
 
 static void _handle_download_image( void )
@@ -623,30 +765,10 @@ static void _handle_download_image( void )
       LOG( PRINT_INFO, "Processing chunk %d artifact %d: %s",
            chunk, art, artifact->filename );
 
-      // Only process main.bin files
-      if ( strcmp( artifact->filename, "main.bin" ) == 0 )
+      chunk_success = _process_artifact( artifact );
+      if ( !chunk_success )
       {
-        // Post download start feedback
-        LOG( PRINT_DEBUG, "Starting download: %s", artifact->download_http );
-        _post_hawkbit_result( "none", "download", "download", false, 1 );
-
-        // Perform download
-        bool download_success = _download_firmware( artifact->download_http, NULL );
-
-        if ( !download_success )
-        {
-          LOG( PRINT_ERROR, "Download failed" );
-          _post_hawkbit_result( "none", "download",
-                                "Failed download. Try again after polling", false, 1 );
-          chunk_success = false;
-          break;
-        }
-
-        // Post download success feedback
-        LOG( PRINT_DEBUG, "Download successful" );
-        _post_hawkbit_result( "none", "downloaded", "downloaded", false, 2 );
-        _post_hawkbit_result( "none", "proceeding", "install", false, 3 );
-        _post_hawkbit_result( "none", "proceeding", "reboot", false, 4 );
+        break;
       }
     }
 
@@ -687,14 +809,14 @@ static void _handle_post_result( void )
     case HAWKBIT_UPDATE_RESULT_SUCCESS:
       details = strlen( ctx.update_result_details ) > 0 ?
                   ctx.update_result_details :
-                  "The update was successfully installed.";
+                  DEFAULT_SUCCESS_MSG;
       post_result = _post_hawkbit_result( "success", "closed", details, false, 5 );
       break;
 
     case HAWKBIT_UPDATE_RESULT_FAILED:
       details = strlen( ctx.update_result_details ) > 0 ?
                   ctx.update_result_details :
-                  "The update failed.";
+                  DEFAULT_FAILURE_MSG;
       post_result = _post_hawkbit_result( "failure", "closed", details, false, 5 );
       break;
 
@@ -738,8 +860,7 @@ static void _handle_cancel_action( void )
     }
 
     // Send cancellation feedback
-    _post_hawkbit_result( "success", "closed",
-                          "The update was canceled by the user.", true, 0 );
+    _post_hawkbit_result( "success", "closed", DEFAULT_CANCEL_MSG, true, 0 );
   }
   else
   {
@@ -747,7 +868,28 @@ static void _handle_cancel_action( void )
   }
 }
 
-/* Initialization and task functions -----------------------------------------*/
+/* Status and initialization -------------------------------------------------*/
+static void _update_status_from_ota( void )
+{
+  ota_drv_status_t status = OTA_GetStatus();
+  LOG( PRINT_INFO, "OTA status: %d", status );
+
+  if ( status == OTA_DRV_APP_VALID_AFTER_UPDATE )
+  {
+    // Update was successful
+    hawkbit_data.update_status = HAWKBIT_UPDATE_SUCCESS;
+    ctx.update_result = HAWKBIT_UPDATE_RESULT_SUCCESS;
+    LOG( PRINT_INFO, "Update successful after reboot (Action ID: %lu)", hawkbit_data.action_id );
+  }
+  else
+  {
+    // Update failed
+    hawkbit_data.update_status = HAWKBIT_STATUS_FAIL;
+    ctx.update_result = HAWKBIT_UPDATE_RESULT_FAILED;
+    LOG( PRINT_INFO, "Update failed after reboot (Action ID: %lu)", hawkbit_data.action_id );
+  }
+}
+
 static void _init_update_status( void )
 {
   // Initialize update result
@@ -761,22 +903,7 @@ static void _init_update_status( void )
   // Check if we're waiting for reboot confirmation
   if ( hawkbit_data.update_status == HAWKBIT_STATUS_WAIT_REBOOT )
   {
-    ota_drv_status_t status = OTA_GetStatus();
-    LOG( PRINT_INFO, "OTA status: %d", status );
-    if ( status == OTA_DRV_APP_VALID_AFTER_UPDATE )
-    {
-      // Update was successful
-      hawkbit_data.update_status = HAWKBIT_UPDATE_SUCCESS;
-      ctx.update_result = HAWKBIT_UPDATE_RESULT_SUCCESS;
-      LOG( PRINT_INFO, "Update successful after reboot (Action ID: %lu)", hawkbit_data.action_id );
-    }
-    else
-    {
-      // Update failed
-      hawkbit_data.update_status = HAWKBIT_STATUS_FAIL;
-      ctx.update_result = HAWKBIT_UPDATE_RESULT_FAILED;
-      LOG( PRINT_INFO, "Update failed after reboot (Action ID: %lu)", hawkbit_data.action_id );
-    }
+    _update_status_from_ota();
 
     // Save updated status - critical to persist this state
     if ( !HawkbitData_Write( &hawkbit_data ) )

@@ -1,7 +1,8 @@
 idf_component_register(
                     SRC_DIRS "." "mongoose"
                     INCLUDE_DIRS "." "mongoose" "mongoose/src"
-                    REQUIRES backend esp_timer app_update
+                    EMBED_TXTFILES "certs/ca_cert.pem"
+                    REQUIRES backend esp_timer app_update mbedtls
                     PRIV_REQUIRES nvs_flash drv main)
 
 
