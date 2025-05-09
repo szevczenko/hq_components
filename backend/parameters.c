@@ -5,7 +5,7 @@
 #include "parse_cmd.h"
 
 #define MODULE_NAME "[PARAM] "
-#define DEBUG_LVL   PRINT_INFO
+#define DEBUG_LVL   PRINT_WARNING
 
 #if CONFIG_DEBUG_MENU_BACKEND
 #define LOG( _lvl, ... ) \

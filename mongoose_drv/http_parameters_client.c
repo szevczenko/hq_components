@@ -73,7 +73,7 @@ typedef struct
   bool wait_response;
 } http_request_t;
 
-static char request_url[256];
+static char request_url[384];
 static QueueHandle_t request_queue = NULL;
 static SemaphoreHandle_t mutex;
 static struct mg_mgr mgr;    // Event manager
@@ -333,7 +333,11 @@ void HTTPParamClient_Init( void )
 
 error_code_t HTTPParamClient_SetU32Value( parameter_value_t parameter, uint32_t value, uint32_t timeout )
 {
-  assert( parameters_setValue( parameter, value ) );
+  if ( parameters_setValue( parameter, value ) == false )
+  {
+    LOG( PRINT_ERROR, "Set value (%s) fail %lu", parameters_getName( parameter ), value );
+    return ERROR_CODE_FAIL;
+  }
   http_request_t request = {
     .type = PARAM_TYPE_U32,
     .data.u32.parameter = parameter,
